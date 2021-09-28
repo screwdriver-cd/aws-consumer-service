@@ -110,8 +110,8 @@ func getPodObject(config map[string]interface{}, namespace string) *core.Pod {
 					},
 					Resources: core.ResourceRequirements{
 						Limits: map[core.ResourceName]resource.Quantity{
-							core.ResourceCPU:    resource.MustParse("200m"),
-							core.ResourceMemory: resource.MustParse("1Gi"),
+							core.ResourceCPU:    resource.MustParse(config["CpuLimit"].(string)),
+							core.ResourceMemory: resource.MustParse(config["MemoryLimit"].(string)),
 						},
 					},
 					Env: []core.EnvVar{

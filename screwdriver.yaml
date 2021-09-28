@@ -19,7 +19,7 @@ jobs:
             # Ensure we can compile
             - build: go build -a -o service
             # Test cross-compiling as well
-            - test-release: "curl -sfL https://install.goreleaser.com/github.com/goreleaser/goreleaser.sh | sh -s -- --snapshot"
+            - test-release: "curl -sfL https://install.goreleaser.com/github.com/goreleaser/goreleaser.sh | sh --snapshot"
     publish:
         image: golang:1.15.5
         requires: main

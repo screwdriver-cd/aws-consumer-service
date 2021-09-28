@@ -1,8 +1,8 @@
 # Screwdriver AWS Consumer Service
 
-> Consumer-Service Package for Screwdriver AWs Integration
+> Consumer-Service Package for Screwdriver AWS Integration
 
-This is package for the Screwdriver continuous delivery solution that receives and processes build messages.
+This is the package for Screwdriver continuous delivery solution that receives and processes build messages.
 
 ## Usage
 
