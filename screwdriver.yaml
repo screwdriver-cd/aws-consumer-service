@@ -18,8 +18,9 @@ jobs:
             - test: gotestsum --format testname --jsonfile ${SD_ARTIFACTS_DIR}/report.json -- -coverprofile=${SD_ARTIFACTS_DIR}/coverage.out ./...
             # Ensure we can compile
             - build: go build -a -o service
+            - getreleaser: curl -sfL https://install.goreleaser.com/github.com/goreleaser/goreleaser.sh | sh
             # Test cross-compiling as well
-            - test-release: "curl -sfL https://install.goreleaser.com/github.com/goreleaser/goreleaser.sh | sh --snapshot"
+            - test-release: ./bin/goreleaser release --snapshot
     publish:
         image: golang:1.15.5
         requires: main
@@ -27,7 +28,8 @@ jobs:
             - setup-ci: git clone https://github.com/screwdriver-cd/toolbox.git ci
             - get: go mod download
             - tag: ./ci/git-tag.sh
-            - release: "curl -sfL https://install.goreleaser.com/github.com/goreleaser/goreleaser.sh | sh"
+            - getreleaser: curl -sfL https://install.goreleaser.com/github.com/goreleaser/goreleaser.sh | sh
+            - test-release: ./bin/goreleaser release
         secrets:
             # Pushing tags to Git
             - GIT_KEY
