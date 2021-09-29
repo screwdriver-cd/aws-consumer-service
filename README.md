@@ -8,3 +8,12 @@ This is the package for Screwdriver continuous delivery solution that receives a
 
 ```bash
 go get aws-consumer-service
+```
+
+## Executors
+
+### [aws-consumer-service/executor/serverless](github.com/screwdriver-cd/aws-consumer-service/executor/serverless)
+This executor is used when annotation in screwdriver.yaml is set to `screwdriver.cd/executor: "sls"`.
+
+### [aws-consumer-service/executor/eks](github.com/screwdriver-cd/aws-consumer-service/executor/eks)
+This executor is used when annotation in screwdriver.yaml is set to `screwdriver.cd/executor: "eks"`.
