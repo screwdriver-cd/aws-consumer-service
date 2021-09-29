@@ -1,4 +1,4 @@
-package executorawsserverless
+package sls
 
 import (
 	"fmt"
@@ -66,9 +66,35 @@ func (e *awsServerless) Start(config map[string]interface{}) (string, error) {
 		Names: names,
 	})
 
-	batchBuildSpec := fmt.Sprintf("version: 0.2\nbatch:\n  fast-fail: false\n  build-graph:\n    - identifier: sdinit\n      env:\n        type: LINUX_CONTAINER\n        image: %v\n        compute-type: %v\n        privileged-mode: false\n      ignore-failure: false\n    - identifier: main\n      buildspec: \"version: 0.2\\nphases:\\n  install:\\n    commands:\\n      - mkdir /opt/sd && cp -r $CODEBUILD_SRC_DIR_sdinit_sdinit/opt/sd/* /opt/sd/\\n  build:\\n    commands:\\n      - /opt/sd/launcher_entrypoint.sh /opt/sd/run.sh $TOKEN $API $STORE $TIMEOUT $SDBUILDID $UI\"\n      depend-on:\n        - sdinit\nartifacts:\n  base-directory: /opt\n  files:  \n    - '/opt/**/*'",
-		config["LauncherImage"], config["LauncherComputeType"])
-	singleBuildSpec := fmt.Sprintf("version: 0.2\nphases:\n  install:\n    commands:\n       - mkdir /opt/sd && cp -r $CODEBUILD_SRC_DIR/opt/sd/* /opt/sd/\n  build:\n    commands:\n       - /opt/sd/launcher_entrypoint.sh /opt/sd/run.sh $TOKEN $API $STORE $TIMEOUT $SDBUILDID $UI\n")
+	mainBuildspec := `version: 0.2\nphases:\n  install:\n    commands:\n      - mkdir /opt/sd && cp -r $CODEBUILD_SRC_DIR_sdinit_sdinit/opt/sd/* /opt/sd/\n  build:\n    commands:\n      - /opt/sd/launcher_entrypoint.sh /opt/sd/run.sh $TOKEN $API $STORE $TIMEOUT $SDBUILDID $UI`
+	batchBuildSpec := `version: 0.2
+batch:
+	fast-fail: false
+	build-graph:
+	- identifier: init
+		env:
+		type: LINUX_CONTAINER
+		image: ` + config["LauncherImage"].(string) + `
+		compute-type: ` + config["LauncherComputeType"].(string) + `
+		privileged-mode: false
+		ignore-failure: false
+	- identifier: main
+		buildspec: ` + `"` + mainBuildspec + `"` + `
+		depend-on:
+		- init
+artifacts:
+	base-directory: /opt
+	files:  
+	- '/opt/**/*'`
+
+	singleBuildSpec := `version: 0.2
+phases:
+	install:
+	commands:
+		- mkdir /opt/sd && cp -r $CODEBUILD_SRC_DIR/opt/sd/* /opt/sd/
+	build:
+	commands:
+		- /opt/sd/launcher_entrypoint.sh /opt/sd/run.sh $TOKEN $API $STORE $TIMEOUT $SDBUILDID $UI`
 
 	initArtifact := &codebuild.ProjectArtifacts{
 		EncryptionDisabled:   aws.Bool(false),

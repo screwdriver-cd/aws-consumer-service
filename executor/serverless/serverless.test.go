@@ -1,4 +1,4 @@
-package executorawsserverless
+package sls
 
 import "testing"
 

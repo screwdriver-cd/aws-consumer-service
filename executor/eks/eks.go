@@ -1,4 +1,4 @@
-package executorawseks
+package eks
 
 import (
 	"context"
