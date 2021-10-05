@@ -45,20 +45,20 @@ func (e *awsServerless) checkLauncherUpdate(launcherVersion string) (l bool) {
 
 // Create a codebuild project and Start a build
 func (e *awsServerless) Start(config map[string]interface{}) (string, error) {
-	launcherVersion := config["LauncherVersion"].(string)
+	launcherVersion := config["launcherVersion"].(string)
 	launcherUpdate := e.checkLauncherUpdate(launcherVersion)
 	sourceIdentifier := "sdinit-" + launcherVersion
-	project := config["JobName"].(string) + "-" + config["JobId"].(string)
+	project := config["jobName"].(string) + "-" + config["jobId"].(string)
 	var securityGroupIds []*string
-	for _, sg := range config["SecurityGroupIds"].([]string) {
+	for _, sg := range config["securityGroupIds"].([]string) {
 		securityGroupIds = append(securityGroupIds, aws.String(sg))
 	}
 	var subnets []*string
-	for _, sn := range config["Subnets"].([]string) {
+	for _, sn := range config["subnets"].([]string) {
 		subnets = append(subnets, aws.String(sn))
 	}
-	queuedTimeout := config["QueuedTimeout"].(int64)
-	buildTimeout := config["BuildTimeout"].(int64)
+	queuedTimeout := config["queuedTimeout"].(int64)
+	buildTimeout := config["buildTimeout"].(int64)
 
 	var names []*string
 	names = append(names, aws.String(project))
@@ -74,8 +74,8 @@ batch:
 	- identifier: init
 		env:
 		type: LINUX_CONTAINER
-		image: ` + config["LauncherImage"].(string) + `
-		compute-type: ` + config["LauncherComputeType"].(string) + `
+		image: ` + config["launcherImage"].(string) + `
+		compute-type: ` + config["launcherComputeType"].(string) + `
 		privileged-mode: false
 		ignore-failure: false
 	- identifier: main
@@ -102,7 +102,7 @@ phases:
 		OverrideArtifactName: aws.Bool(false),
 		Packaging:            aws.String("ZIP"),
 		Type:                 aws.String("S3"),
-		Name:                 aws.String(config["LauncherVersion"].(string)),
+		Name:                 aws.String(config["launcherVersion"].(string)),
 	}
 
 	createRequest := &codebuild.CreateProjectInput{
@@ -116,20 +116,20 @@ phases:
 			Type:      aws.String("S3"),
 		},
 		QueuedTimeoutInMinutes: aws.Int64(queuedTimeout),
-		ServiceRole:            aws.String(config["RoleArn"].(string)),
+		ServiceRole:            aws.String(config["roleArn"].(string)),
 		TimeoutInMinutes:       aws.Int64(buildTimeout),
 		ConcurrentBuildLimit:   aws.Int64(2),
 		Environment: &codebuild.ProjectEnvironment{
-			ComputeType:              aws.String(config["ComputeType"].(string)),
-			Image:                    aws.String(config["Container"].(string)),
-			ImagePullCredentialsType: aws.String(config["ImagePullCredentialsType"].(string)),
-			PrivilegedMode:           aws.Bool(config["PrivilegedMode"].(bool)),
-			Type:                     aws.String(config["EnvironmentType"].(string)),
+			ComputeType:              aws.String(config["computeType"].(string)),
+			Image:                    aws.String(config["container"].(string)),
+			ImagePullCredentialsType: aws.String(config["imagePullCredentialsType"].(string)),
+			PrivilegedMode:           aws.Bool(config["privilegedMode"].(bool)),
+			Type:                     aws.String(config["environmentType"].(string)),
 		},
 		VpcConfig: &codebuild.VpcConfig{
 			SecurityGroupIds: securityGroupIds,
 			Subnets:          subnets,
-			VpcId:            aws.String(config["VpcId"].(string)),
+			VpcId:            aws.String(config["vpcId"].(string)),
 		},
 		LogsConfig: &codebuild.LogsConfig{
 			CloudWatchLogs: &codebuild.CloudWatchLogsConfig{
@@ -150,11 +150,11 @@ phases:
 		createRequest.BuildBatchConfig = &codebuild.ProjectBuildBatchConfig{
 			CombineArtifacts: aws.Bool(false),
 			Restrictions:     &codebuild.BatchRestrictions{MaximumBuildsAllowed: aws.Int64(2)},
-			ServiceRole:      aws.String(config["RoleArn"].(string)),
+			ServiceRole:      aws.String(config["roleArn"].(string)),
 			TimeoutInMins:    aws.Int64(buildTimeout),
 		}
 	}
-	if config["Dlc "].(bool) {
+	if config["dlc "].(bool) {
 		createRequest.Cache = &codebuild.ProjectCache{
 			Location: new(string),
 			Modes:    []*string{aws.String("LOCAL_DOCKER_LAYER_CACHE")},
@@ -184,12 +184,12 @@ phases:
 	}
 
 	var envVars []*codebuild.EnvironmentVariable = []*codebuild.EnvironmentVariable{
-		{Name: aws.String("TOKEN"), Value: aws.String(config["Token"].(string))},
-		{Name: aws.String("API"), Value: aws.String(config["ApiUri"].(string))},
-		{Name: aws.String("STORE"), Value: aws.String(config["StoreUri"].(string))},
-		{Name: aws.String("UI"), Value: aws.String(config["UiUri"].(string))},
-		{Name: aws.String("TIMEOUT"), Value: aws.String(config["BuildTimeout"].(string))},
-		{Name: aws.String("SDBUILDID"), Value: aws.String(config["BuildId"].(string))},
+		{Name: aws.String("TOKEN"), Value: aws.String(config["token"].(string))},
+		{Name: aws.String("API"), Value: aws.String(config["apiUri"].(string))},
+		{Name: aws.String("STORE"), Value: aws.String(config["storeUri"].(string))},
+		{Name: aws.String("UI"), Value: aws.String(config["uiUri"].(string))},
+		{Name: aws.String("TIMEOUT"), Value: aws.String(config["buildTimeout"].(string))},
+		{Name: aws.String("SDBUILDID"), Value: aws.String(config["buildId"].(string))},
 		{Name: aws.String("SD_NO_HAB"), Value: aws.String(strconv.FormatBool(true))},
 	}
 
@@ -200,18 +200,18 @@ phases:
 		buildBatchInput := &codebuild.StartBuildBatchInput{
 			EnvironmentVariablesOverride: envVars,
 			ProjectName:                  aws.String(project),
-			ServiceRoleOverride:          aws.String(config["RoleArn"].(string)),
+			ServiceRoleOverride:          aws.String(config["roleArn"].(string)),
 			ArtifactsOverride:            initArtifact,
 			BuildBatchConfigOverride: &codebuild.ProjectBuildBatchConfig{
 				CombineArtifacts: aws.Bool(false),
 				Restrictions:     &codebuild.BatchRestrictions{MaximumBuildsAllowed: aws.Int64(2)},
-				ServiceRole:      aws.String(config["RoleArn"].(string)),
+				ServiceRole:      aws.String(config["roleArn"].(string)),
 				TimeoutInMins:    aws.Int64(buildTimeout),
 			},
 			BuildspecOverride:  aws.String(batchBuildSpec),
 			SourceTypeOverride: aws.String("NO_SOURCE"),
 		}
-		if config["LogsEnabled"].(bool) {
+		if config["logsEnabled"].(bool) {
 			buildBatchInput.LogsConfigOverride = &codebuild.LogsConfig{
 				CloudWatchLogs: &codebuild.CloudWatchLogsConfig{
 					Status: aws.String("ENABLED"),
@@ -230,9 +230,9 @@ phases:
 		buildInput := &codebuild.StartBuildInput{
 			EnvironmentVariablesOverride: envVars,
 			ProjectName:                  aws.String(project),
-			ServiceRoleOverride:          aws.String(config["RoleArn"].(string)),
+			ServiceRoleOverride:          aws.String(config["roleArn"].(string)),
 		}
-		if config["LogsEnabled"].(bool) {
+		if config["logsEnabled"].(bool) {
 			buildInput.LogsConfigOverride = &codebuild.LogsConfig{
 				CloudWatchLogs: &codebuild.CloudWatchLogsConfig{
 					Status: aws.String("ENABLED"),
@@ -252,9 +252,9 @@ phases:
 
 // Stop a build and delete build project
 func (e *awsServerless) Stop(config map[string]interface{}) (err error) {
-	launcherUpdate := e.checkLauncherUpdate(config["LauncherVersion"].(string))
-	project := config["JobName"].(string) + "-" + config["JobId"].(string)
-	if config["Prune "].(bool) {
+	launcherUpdate := e.checkLauncherUpdate(config["launcherVersion"].(string))
+	project := config["jobName"].(string) + "-" + config["jobId"].(string)
+	if config["prune "].(bool) {
 		deleteProjectResponse, err := e.svcCBClient.DeleteProject(&codebuild.DeleteProjectInput{
 			Name: aws.String(project),
 		})

@@ -18,10 +18,12 @@ import (
 	"github.com/aws/aws-lambda-go/lambda"
 	eksExecutor "github.com/screwdriver-cd/aws-consumer-service/executor/eks"
 	slsExecutor "github.com/screwdriver-cd/aws-consumer-service/executor/serverless"
-	sdapi "github.com/screwdriver-cd/aws-consumer-service/screwdriver"
+	sd "github.com/screwdriver-cd/aws-consumer-service/screwdriver"
 )
 
 var UTCLoc, _ = time.LoadLocation("UTC")
+var api = sd.New
+var executorsList = []iExecutor{eksExecutor.New(), slsExecutor.New()}
 
 type BuildMessage struct {
 	Job          string                 `json:"job"`
@@ -35,8 +37,6 @@ type iExecutor interface {
 	Name() string
 }
 
-var executorsList = []iExecutor{eksExecutor.New(), slsExecutor.New()}
-
 func GetExecutor(name string) iExecutor {
 	var currentExecutor iExecutor
 	for _, v := range executorsList {
@@ -48,7 +48,19 @@ func GetExecutor(name string) iExecutor {
 	return currentExecutor
 }
 
-func ProcessMessage(id int, value string, wg *sync.WaitGroup, ctx context.Context) {
+func UpdateBuildStats(hostname string, buildId int, api sd.API) {
+	if hostname != "" { // update SD stats
+		stats := map[string]interface{}{
+			"hostname":           hostname,
+			"imagePullStartTime": time.Now().In(UTCLoc),
+		}
+		if apierr := api.UpdateBuild(stats, int(buildId), ""); apierr != nil {
+			log.Printf("Updating build stats: %v", apierr)
+		}
+	}
+}
+
+var ProcessMessage = func(id int, value string, wg *sync.WaitGroup, ctx context.Context) error {
 	defer wg.Done()
 
 	log.Printf("Processing id: %v", id)
@@ -59,22 +71,22 @@ func ProcessMessage(id int, value string, wg *sync.WaitGroup, ctx context.Contex
 
 	message := string(str)
 
-	log.Printf("executor Serverless processing:%v", message)
+	log.Printf("executor processing:%v", message)
 
 	buildMesage := &BuildMessage{
 		BuildConfig: map[string]interface{}{
 			//default values
-			"Container":                "aws/codebuild/standard:5.0",
-			"IsPR":                     false,
-			"PrivilegedMode":           false,
-			"ImagePullCredentialsType": "SERVICE_ROLE",
-			"EnvironmentType":          "LINUX_CONTAINER",
-			"ComputeType":              "BUILD_GENERAL1_SMALL",
-			"QueuedTimeout":            "5",
-			"LauncherComputeType":      "BUILD_GENERAL1_SMALL",
-			"LogsEnabled":              false,
-			"Prune":                    false,
-			"ServiceAccountName":       "default",
+			"container":                "aws/codebuild/standard:5.0",
+			"isPR":                     false,
+			"privilegedMode":           false,
+			"imagePullCredentialsType": "SERVICE_ROLE",
+			"environmentType":          "LINUX_CONTAINER",
+			"computeType":              "BUILD_GENERAL1_SMALL",
+			"queuedTimeout":            "5",
+			"launcherComputeType":      "BUILD_GENERAL1_SMALL",
+			"logsEnabled":              false,
+			"prune":                    false,
+			"serviceAccountName":       "default",
 		},
 	}
 	json.Unmarshal([]byte(message), buildMesage)
@@ -89,19 +101,6 @@ func ProcessMessage(id int, value string, wg *sync.WaitGroup, ctx context.Contex
 		switch string(job) {
 		case "start":
 			hostname, err = executor.Start(buildConfig)
-			if err == nil { // update SD stats
-				stats := map[string]interface{}{
-					"Hostname":           hostname,
-					"ImagePullStartTime": time.Now().In(UTCLoc),
-				}
-				buildId := buildConfig["BuildId"].(int)
-
-				api, _ := sdapi.New(buildConfig["ApiUri"].(string), buildConfig["Token"].(string))
-
-				if apierr := api.UpdateBuild(stats, buildId, ""); apierr != nil {
-					log.Printf("Updating build stats: %v", apierr)
-				}
-			}
 		case "stop":
 			err = executor.Stop(buildConfig)
 		}
@@ -110,7 +109,12 @@ func ProcessMessage(id int, value string, wg *sync.WaitGroup, ctx context.Contex
 		} else {
 			log.Printf("%v build successful", job)
 		}
+		buildId := buildConfig["buildId"].(float64)
+		api, _ := api(buildConfig["apiUri"].(string), buildConfig["token"].(string))
+		UpdateBuildStats(hostname, int(buildId), api)
 	}
+
+	return nil
 }
 
 func recoverPanic() {

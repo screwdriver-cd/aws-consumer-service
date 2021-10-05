@@ -23,6 +23,7 @@ var httpTimeout = time.Duration(20) * time.Second
 
 type API interface {
 	UpdateBuild(stats map[string]interface{}, buildID int, statusMessage string) error
+	GetAPIURL() (string, error)
 }
 
 // BuildStatusMessagePayload is a Screwdriver Build Status Message payload.
@@ -133,6 +134,11 @@ func (a SDAPI) put(url *url.URL, bodyType string, payload io.Reader) ([]byte, er
 	return a.write(url, "PUT", bodyType, payload)
 }
 
+func (a SDAPI) GetAPIURL() (string, error) {
+	url, err := a.makeURL("")
+	return url.String(), err
+}
+
 func (a SDAPI) UpdateBuild(stats map[string]interface{}, buildID int, statusMessage string) error {
 	u, err := a.makeURL(fmt.Sprintf("builds/%d", buildID))
 	if err != nil {
@@ -141,7 +147,7 @@ func (a SDAPI) UpdateBuild(stats map[string]interface{}, buildID int, statusMess
 
 	var payload []byte
 	bs := &BuildStatsPayload{}
-	if stats["Hostname"].(string) != "" {
+	if stats["hostname"].(string) != "" {
 		bs.Stats = stats
 	}
 

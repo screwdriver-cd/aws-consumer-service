@@ -7,6 +7,7 @@ require (
 	github.com/aws/aws-sdk-go v1.40.13
 	github.com/google/uuid v1.3.0 // indirect
 	github.com/hashicorp/go-retryablehttp v0.7.0
+	github.com/stretchr/testify v1.6.1
 	gopkg.in/yaml.v2 v2.4.0 // indirect
 	k8s.io/api v0.19.0
 	k8s.io/apimachinery v0.19.0

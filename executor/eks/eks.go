@@ -36,7 +36,7 @@ func (e *awsEKS) newClientSet(config map[string]interface{}) (*kubernetes.Client
 	}
 	//connect to cluster
 	cluster_info, err := e.svcEks.DescribeCluster(&eks.DescribeClusterInput{
-		Name: aws.String(config["ClusterName"].(string)),
+		Name: aws.String(config["clusterName"].(string)),
 	})
 	certificate := cluster_info.Cluster.CertificateAuthority.Data
 	endpoint := cluster_info.Cluster.Endpoint
@@ -79,7 +79,7 @@ func (e *awsEKS) newClientSet(config map[string]interface{}) (*kubernetes.Client
 }
 
 func getPodObject(config map[string]interface{}, namespace string) *core.Pod {
-	buildIdWithPrefix := config["Prefix"].(string) + "-" + config["BuildId"].(string)
+	buildIdWithPrefix := config["prefix"].(string) + "-" + config["buildId"].(string)
 	podName := buildIdWithPrefix + "-" + rand.String(5)
 	return &core.Pod{
 		ObjectMeta: metav1.ObjectMeta{
@@ -88,7 +88,7 @@ func getPodObject(config map[string]interface{}, namespace string) *core.Pod {
 			Labels:    map[string]string{"app": "screwdriver", "tier": "builds", "sdbuild": buildIdWithPrefix},
 		},
 		Spec: core.PodSpec{
-			ServiceAccountName:            config["ServiceAccountName"].(string),
+			ServiceAccountName:            config["serviceAccountName"].(string),
 			AutomountServiceAccountToken:  &[]bool{true}[0],
 			TerminationGracePeriodSeconds: &[]int64{core.DefaultTerminationGracePeriodSeconds}[0],
 			RestartPolicy:                 core.RestartPolicyNever,
@@ -96,7 +96,7 @@ func getPodObject(config map[string]interface{}, namespace string) *core.Pod {
 			Containers: []core.Container{
 				core.Container{
 					Name:            buildIdWithPrefix,
-					Image:           config["Container"].(string),
+					Image:           config["container"].(string),
 					ImagePullPolicy: core.PullAlways,
 					Ports: []core.ContainerPort{
 						{
@@ -110,17 +110,17 @@ func getPodObject(config map[string]interface{}, namespace string) *core.Pod {
 					},
 					Resources: core.ResourceRequirements{
 						Limits: map[core.ResourceName]resource.Quantity{
-							core.ResourceCPU:    resource.MustParse(config["CpuLimit"].(string)),
-							core.ResourceMemory: resource.MustParse(config["MemoryLimit"].(string)),
+							core.ResourceCPU:    resource.MustParse(config["cpuLimit"].(string)),
+							core.ResourceMemory: resource.MustParse(config["memoryLimit"].(string)),
 						},
 					},
 					Env: []core.EnvVar{
 						core.EnvVar{Name: "SD_RUNTIME_CLASS", Value: ""},
 						core.EnvVar{Name: "SD_PUSHGATEWAY_URL", Value: ""},
 						core.EnvVar{Name: "SD_TERMINATION_GRACE_PERIOD_SECONDS", Value: "60"}, //string(core.DefaultTerminationGracePeriodSeconds)
-						core.EnvVar{Name: "CONTAINER_IMAGE", Value: config["Container"].(string)},
-						core.EnvVar{Name: "SD_PIPELINE_ID", Value: config["PipelineId"].(string)},
-						core.EnvVar{Name: "SD_BUILD_PREFIX", Value: config["Prefix"].(string)},
+						core.EnvVar{Name: "CONTAINER_IMAGE", Value: config["container"].(string)},
+						core.EnvVar{Name: "SD_PIPELINE_ID", Value: config["pipelineId"].(string)},
+						core.EnvVar{Name: "SD_BUILD_PREFIX", Value: config["prefix"].(string)},
 						core.EnvVar{Name: "NODE_ID", ValueFrom: &core.EnvVarSource{FieldRef: &core.ObjectFieldSelector{FieldPath: "spec.nodeName"}}},
 						core.EnvVar{Name: "SD_BASE_COMMAND_PATH", Value: "/sd/commands/"},
 						core.EnvVar{Name: "SD_TEMP", Value: "/opt/sd_tmp"},
@@ -129,12 +129,12 @@ func getPodObject(config map[string]interface{}, namespace string) *core.Pod {
 					Command: []string{"/opt/sd/launcher_entrypoint.sh"},
 					Args: []string{
 						fmt.Sprintf("/opt/sd/run.sh %v %v %v %v %v %v",
-							config["Token"].(string),
-							config["ApiUri"].(string),
-							config["StoreUri"].(string),
-							config["BuildTimeout"].(string),
-							config["BuildId"].(string),
-							config["UiUri"].(string),
+							config["token"].(string),
+							config["apiUri"].(string),
+							config["storeUri"].(string),
+							config["buildTimeout"].(string),
+							config["buildId"].(string),
+							config["uiUri"].(string),
 						),
 					},
 					VolumeMounts: []core.VolumeMount{
@@ -157,8 +157,8 @@ func getPodObject(config map[string]interface{}, namespace string) *core.Pod {
 				},
 			},
 			Volumes: []core.Volume{
-				core.Volume{Name: "screwdriver", VolumeSource: core.VolumeSource{HostPath: &core.HostPathVolumeSource{Path: "/opt/screwdriver/sdlauncher/" + config["LauncherVersion"].(string)}}}, //Type: &core.HostPathType("DirectoryOrCreate")
-				core.Volume{Name: "sdtemp", VolumeSource: core.VolumeSource{HostPath: &core.HostPathVolumeSource{Path: "/opt/screwdriver/tmp_" + config["BuildId"].(string)}}},
+				core.Volume{Name: "screwdriver", VolumeSource: core.VolumeSource{HostPath: &core.HostPathVolumeSource{Path: "/opt/screwdriver/sdlauncher/" + config["launcherVersion"].(string)}}}, //Type: &core.HostPathType("DirectoryOrCreate")
+				core.Volume{Name: "sdtemp", VolumeSource: core.VolumeSource{HostPath: &core.HostPathVolumeSource{Path: "/opt/screwdriver/tmp_" + config["buildId"].(string)}}},
 				core.Volume{Name: "workspace", VolumeSource: core.VolumeSource{EmptyDir: &core.EmptyDirVolumeSource{}}},
 				core.Volume{Name: "podinfo", VolumeSource: core.VolumeSource{DownwardAPI: &core.DownwardAPIVolumeSource{Items: []core.DownwardAPIVolumeFile{
 					core.DownwardAPIVolumeFile{Path: "labels", FieldRef: &core.ObjectFieldSelector{FieldPath: "metadata.labels"}},
@@ -215,7 +215,7 @@ func (e *awsEKS) Start(config map[string]interface{}) (string, error) {
 func (e *awsEKS) Stop(config map[string]interface{}) error {
 	clientset, _ := e.newClientSet(config)
 	namespace := "sd-builds"
-	buildIdWithPrefix := config["Prefix"].(string) + "-" + config["BuildId"].(string)
+	buildIdWithPrefix := config["prefix"].(string) + "-" + config["buildId"].(string)
 	podsClient := clientset.CoreV1().Pods(namespace)
 	listPods, err := podsClient.List(context.TODO(), metav1.ListOptions{LabelSelector: fmt.Sprintf("sdbuild=%v", buildIdWithPrefix)})
 	if err != nil {
