@@ -224,12 +224,12 @@ func (e *awsExecutorEKS) Start(config map[string]interface{}) (string, error) {
 
 	// build the pod defination we want to deploy
 	pod := getPodObject(config, namespace)
-	log.Printf("Pod spec %+v", pod)
+	log.Printf("Pod spec %+v", pod.Spec)
 	// create pod in eks cluster
 	fmt.Println("Creating pod...")
 	podResponse, errPod := podsClient.Create(context.TODO(), pod, metav1.CreateOptions{})
 	if errPod != nil {
-		fmt.Printf("Error creating pod %v", errPod)
+		return "", fmt.Errorf("Error creating pod %v", errPod)
 	}
 	log.Printf("Created pod %v.\n", podResponse.ObjectMeta.Name)
 
@@ -239,7 +239,8 @@ func (e *awsExecutorEKS) Start(config map[string]interface{}) (string, error) {
 
 	nodeName := getResponse.Spec.NodeName
 
-	log.Printf("Node %v.\n", nodeName)
+	log.Printf("Node:%v\n", nodeName)
+
 	return nodeName, nil
 }
 
@@ -249,14 +250,16 @@ func (e *awsExecutorEKS) Stop(config map[string]interface{}) error {
 	namespace := config["namespace"].(string)
 	buildIdStr := strconv.Itoa(config["buildId"].(int))
 	buildIdWithPrefix := config["prefix"].(string) + "-" + buildIdStr
+
 	podsClient := clientset.client.CoreV1().Pods(namespace)
 	listPods, err := podsClient.List(context.TODO(), metav1.ListOptions{LabelSelector: fmt.Sprintf("sdbuild=%v", buildIdWithPrefix)})
+
 	if err != nil {
-		log.Printf("List pod response %v.\n", listPods)
+		return fmt.Errorf("Failed to get pods %v.\n", err)
 	}
 	//delete pod in eks cluster
-	fmt.Println("Deleting pod...")
 	for _, i := range listPods.Items {
+		fmt.Printf("Deleting pod...%s.\n", i.Name)
 		result := podsClient.Delete(context.TODO(), i.Name, metav1.DeleteOptions{})
 		fmt.Printf("Deleted pod %q.\n", result)
 	}

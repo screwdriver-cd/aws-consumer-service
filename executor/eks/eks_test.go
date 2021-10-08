@@ -23,7 +23,7 @@ var (
 	expectedClusterOutputArn = "arn:" + clusterName
 	testNamespace            = "sd-builds"
 	testPrefix               = "beta"
-	testBuildId              = 124
+	testBuildId              = 1234
 	testConfig               = map[string]interface{}{
 		"clusterName":        clusterName,
 		"namespace":          testNamespace,
@@ -237,48 +237,91 @@ func TestStart(t *testing.T) {
 			client: kubeclient,
 		},
 	}
-
-	errorConfig := testConfig
+	errorConfig := make(map[string]interface{})
+	for key, value := range testConfig {
+		errorConfig[key] = value
+	}
 	errorConfig["namespace"] = "default"
-	//errorConfig["cpuLimit"] = "2gi"
 
 	tests := []struct {
-		request      map[string]interface{}
-		expectedPod  string
-		expectedNode string
-		err          error
+		request          map[string]interface{}
+		expectedPodCount int
+		expectedNode     string
+		err              error
 	}{
 		{
-			request:      testConfig,
-			expectedNode: "ip-12-3-4.example.com",
-			err:          nil,
+			request:          errorConfig,
+			expectedNode:     "ip-12-3-4.example.com",
+			expectedPodCount: 0,
+			err:              nil,
 		},
 		{
-			request:      errorConfig,
-			expectedNode: "ip-12-3-4.example.com",
-			expectedPod:  "",
-			err:          nil,
+			request:          testConfig,
+			expectedNode:     "ip-12-3-4.example.com",
+			err:              nil,
+			expectedPodCount: 1,
 		},
 	}
 	coreClient := executor.k8sClientset.client.CoreV1()
 	buildIdWithPrefix := testPrefix + "-" + "1234"
 	for _, test := range tests {
 		got, err := executor.Start(test.request)
-		fmt.Printf("--%s", got)
 		assert.IsType(t, test.expectedNode, got)
 		assert.IsType(t, test.err, err)
 		list, _ := coreClient.Nodes().List(context.TODO(), metav1.ListOptions{})
 		for _, node := range list.Items {
 			assert.Equal(t, test.expectedNode, node.Name)
 		}
-		listPods, err := coreClient.Pods(testNamespace).List(context.TODO(),
+		//test.request["namespace"].(string)
+		pods, err := coreClient.Pods(testNamespace).List(context.TODO(),
 			metav1.ListOptions{LabelSelector: fmt.Sprintf("sdbuild=%v", buildIdWithPrefix)})
-		for _, i := range listPods.Items {
-			assert.Equal(t, test.expectedPod, i.Name)
-		}
+		assert.Equal(t, test.expectedPodCount, len(pods.Items))
 	}
 }
 
 func TestStop(t *testing.T) {
+	buildIdWithPrefix := testPrefix + "-" + "1234"
+	podName := buildIdWithPrefix + "-erbf3"
+	kubeclient := fake.NewSimpleClientset(&core.Pod{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      podName,
+			Namespace: testNamespace,
+			Labels:    map[string]string{"app": "screwdriver", "tier": "builds", "sdbuild": buildIdWithPrefix},
+		},
+	})
+	errorConfig := make(map[string]interface{})
+	for key, value := range testConfig {
+		errorConfig[key] = value
+	}
+	errorConfig["namespace"] = "default"
 
+	executor := &awsExecutorEKS{
+		k8sClientset: &k8sClientset{
+			client: kubeclient,
+		},
+	}
+	tests := []struct {
+		request          map[string]interface{}
+		expectedPodCount int
+		err              error
+	}{
+		{
+			request:          errorConfig,
+			expectedPodCount: 1,
+			err:              nil,
+		},
+		{
+			request:          testConfig,
+			expectedPodCount: 0,
+			err:              nil,
+		},
+	}
+
+	coreClient := executor.k8sClientset.client.CoreV1()
+	for _, test := range tests {
+		err := executor.Stop(test.request)
+		assert.IsType(t, test.err, err)
+		pods, err := coreClient.Pods(testNamespace).List(context.TODO(), metav1.ListOptions{})
+		assert.Equal(t, test.expectedPodCount, len(pods.Items))
+	}
 }
