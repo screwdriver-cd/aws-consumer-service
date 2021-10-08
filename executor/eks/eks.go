@@ -3,13 +3,16 @@ package eks
 import (
 	"context"
 	"encoding/base64"
+	"errors"
 	"fmt"
 	"log"
 	"os"
+	"strconv"
 
 	"github.com/aws/aws-sdk-go/aws"
 	"github.com/aws/aws-sdk-go/aws/session"
 	"github.com/aws/aws-sdk-go/service/eks"
+	"github.com/aws/aws-sdk-go/service/eks/eksiface"
 	core "k8s.io/api/core/v1"
 	resource "k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -17,46 +20,85 @@ import (
 	"k8s.io/client-go/kubernetes"
 	"k8s.io/client-go/rest"
 
+	//"k8s.io/client-go/kubernetes/typed/core/v1"
 	"sigs.k8s.io/aws-iam-authenticator/pkg/token"
 )
 
-type ExecutorAwsEKS interface {
-	Start(config map[string]interface{}) error
-	Stop(config map[string]interface{}) error
+type eksClient struct {
+	service eksiface.EKSAPI
 }
-type awsEKS struct {
+type k8sClientset struct {
+	client kubernetes.Interface
+}
+type awsExecutorEKS struct {
 	name         string
-	svcEks       *eks.EKS
-	k8sClientSet *kubernetes.Clientset
+	eksClient    *eksClient
+	k8sClientset *k8sClientset
 }
 
-func (e *awsEKS) newClientSet(config map[string]interface{}) (*kubernetes.Clientset, error) {
-	if e.k8sClientSet != nil {
-		return e.k8sClientSet, nil
+func (c *eksClient) describeCluster(cluster_name string) (*eks.DescribeClusterOutput, error) {
+	if cluster_name == "" {
+		return nil, errors.New("cluster name is empty")
 	}
-	//connect to cluster
-	cluster_info, err := e.svcEks.DescribeCluster(&eks.DescribeClusterInput{
-		Name: aws.String(config["clusterName"].(string)),
+	cluster_info, err := c.service.DescribeCluster(&eks.DescribeClusterInput{
+		Name: aws.String(cluster_name),
 	})
-	certificate := cluster_info.Cluster.CertificateAuthority.Data
-	endpoint := cluster_info.Cluster.Endpoint
-	arn := cluster_info.Cluster.Arn
 	if err != nil {
-		return nil, fmt.Errorf("Error calling DescribeCluster:: %v", err)
-	}
-	log.Printf("Cluster Arn: %v", string(*arn))
-	gen, err := token.NewGenerator(true, false)
-	if err != nil {
+		log.Printf("DescribeCluster error - %s", err)
 		return nil, err
 	}
+	if cluster_info == nil {
+		log.Printf("cluster does not exist")
+		return nil, errors.New("cluster does not exist")
+	}
+
+	return cluster_info, err
+}
+
+// newAWSService returns a new instance of emr
+func newEKSService(region string) *eksClient {
+	sess, err := session.NewSession(&aws.Config{
+		Region: aws.String(region)},
+	)
+	if err != nil {
+		log.Printf("error while creating AWS session - %s", err.Error())
+	}
+	svcEks := eks.New(sess)
+
+	return &eksClient{
+		service: svcEks,
+	}
+}
+func (e *awsExecutorEKS) getToken(cluster_name *string) (string, error) {
+	gen, err := token.NewGenerator(true, false)
+	if err != nil {
+		return "", err
+	}
 	opts := &token.GetTokenOptions{
-		ClusterID: aws.StringValue(cluster_info.Cluster.Name),
+		ClusterID: aws.StringValue(cluster_name),
 	}
 	tok, err := gen.GetWithOptions(opts)
 	if err != nil {
-		return nil, err
+		return "", err
 	}
-	log.Printf("Token: %v", tok.Token)
+	return tok.Token, nil
+}
+func (e *awsExecutorEKS) newClientSet(config map[string]interface{}) (*k8sClientset, error) {
+	if e.k8sClientset != nil {
+		return e.k8sClientset, nil
+	}
+	//connect to cluster
+	cluster_info, err := e.eksClient.describeCluster(config["clusterName"].(string))
+	if err != nil {
+		return nil, fmt.Errorf("Error calling DescribeCluster:%v", err)
+	}
+	certificate := cluster_info.Cluster.CertificateAuthority.Data
+	endpoint := cluster_info.Cluster.Endpoint
+	arn := cluster_info.Cluster.Arn
+	log.Printf("Cluster Arn: %v", string(*arn))
+
+	//get token
+	token, err := e.getToken(cluster_info.Cluster.Name)
 	ca, err := base64.StdEncoding.DecodeString(aws.StringValue(certificate))
 	if err != nil {
 		return nil, err
@@ -64,23 +106,27 @@ func (e *awsEKS) newClientSet(config map[string]interface{}) (*kubernetes.Client
 	clientset, err := kubernetes.NewForConfig(
 		&rest.Config{
 			Host:        aws.StringValue(endpoint),
-			BearerToken: tok.Token,
+			BearerToken: token,
 			TLSClientConfig: rest.TLSClientConfig{
 				CAData: ca,
 			},
 		},
 	)
 	if err != nil {
-		log.Fatalf("Error creating clientset: %v", err)
+		return nil, fmt.Errorf("Error creating clientset: %v", err)
 	}
-	e.k8sClientSet = clientset
+	e.k8sClientset = &k8sClientset{
+		client: clientset,
+	}
 
-	return e.k8sClientSet, nil
+	return e.k8sClientset, nil
 }
 
 func getPodObject(config map[string]interface{}, namespace string) *core.Pod {
-	buildIdWithPrefix := config["prefix"].(string) + "-" + config["buildId"].(string)
+	buildIdStr := strconv.Itoa(config["buildId"].(int))
+	buildIdWithPrefix := config["prefix"].(string) + "-" + buildIdStr
 	podName := buildIdWithPrefix + "-" + rand.String(5)
+
 	return &core.Pod{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      podName,
@@ -106,7 +152,7 @@ func getPodObject(config map[string]interface{}, namespace string) *core.Pod {
 						},
 					},
 					SecurityContext: &core.SecurityContext{
-						Privileged: config["PrivilegedMode"].(*bool),
+						Privileged: &[]bool{config["privilegedMode"].(bool)}[0],
 					},
 					Resources: core.ResourceRequirements{
 						Limits: map[core.ResourceName]resource.Quantity{
@@ -133,7 +179,7 @@ func getPodObject(config map[string]interface{}, namespace string) *core.Pod {
 							config["apiUri"].(string),
 							config["storeUri"].(string),
 							config["buildTimeout"].(string),
-							config["buildId"].(string),
+							buildIdStr,
 							config["uiUri"].(string),
 						),
 					},
@@ -148,7 +194,7 @@ func getPodObject(config map[string]interface{}, namespace string) *core.Pod {
 			InitContainers: []core.Container{
 				core.Container{
 					Name:    "launcher-" + buildIdWithPrefix,
-					Image:   config["LauncherImage"].(string),
+					Image:   config["launcherImage"].(string),
 					Command: []string{"/bin/sh", "-c", "echo launcher_start_ts:`date +%s` > /workspace/metrics && if ! [ -f /opt/launcher/launch ]; then TEMP_DIR=`mktemp -d -p /opt/launcher` && cp -a /opt/sd/* $TEMP_DIR && mkdir -p $TEMP_DIR/hab && cp -a /hab/* $TEMP_DIR/hab && mv $TEMP_DIR/* /opt/launcher && rm -rf $TEMP_DIR || true; else ls /opt/launcher; fi; echo launcher_end_ts:`date +%s` >> /workspace/metrics"},
 					VolumeMounts: []core.VolumeMount{
 						core.VolumeMount{MountPath: "/opt/launcher", Name: "screwdriver"},
@@ -158,7 +204,7 @@ func getPodObject(config map[string]interface{}, namespace string) *core.Pod {
 			},
 			Volumes: []core.Volume{
 				core.Volume{Name: "screwdriver", VolumeSource: core.VolumeSource{HostPath: &core.HostPathVolumeSource{Path: "/opt/screwdriver/sdlauncher/" + config["launcherVersion"].(string)}}}, //Type: &core.HostPathType("DirectoryOrCreate")
-				core.Volume{Name: "sdtemp", VolumeSource: core.VolumeSource{HostPath: &core.HostPathVolumeSource{Path: "/opt/screwdriver/tmp_" + config["buildId"].(string)}}},
+				core.Volume{Name: "sdtemp", VolumeSource: core.VolumeSource{HostPath: &core.HostPathVolumeSource{Path: "/opt/screwdriver/tmp_" + buildIdStr}}},
 				core.Volume{Name: "workspace", VolumeSource: core.VolumeSource{EmptyDir: &core.EmptyDirVolumeSource{}}},
 				core.Volume{Name: "podinfo", VolumeSource: core.VolumeSource{DownwardAPI: &core.DownwardAPIVolumeSource{Items: []core.DownwardAPIVolumeFile{
 					core.DownwardAPIVolumeFile{Path: "labels", FieldRef: &core.ObjectFieldSelector{FieldPath: "metadata.labels"}},
@@ -170,25 +216,11 @@ func getPodObject(config map[string]interface{}, namespace string) *core.Pod {
 }
 
 // Start a k8s pod in eks
-func (e *awsEKS) Start(config map[string]interface{}) (string, error) {
+func (e *awsExecutorEKS) Start(config map[string]interface{}) (string, error) {
 	clientset, _ := e.newClientSet(config)
-	namespace := "sd-builds"
-	// nodes, err := clientset.CoreV1().Nodes().List(ctx, metav1.ListOptions{})
-	// if err != nil {
-	// 	log.Printf("Error getting EKS nodes: %v", err)
-	// }
-	// log.Printf("There are %d nodes associated with cluster", len(nodes.Items))
-
-	podsClient := clientset.CoreV1().Pods(namespace)
+	namespace := config["namespace"].(string)
+	podsClient := clientset.client.CoreV1().Pods(namespace)
 	log.Printf("Namespace: %v, PodClient: +%v", namespace, &podsClient)
-
-	pods, err := clientset.CoreV1().Pods(namespace).List(context.TODO(), metav1.ListOptions{})
-	if err != nil {
-		fmt.Printf("Error listing pods %v", err)
-	}
-	log.Printf("pods %+v\n", pods)
-
-	log.Printf("There are %d pods in the cluster\n", len(pods.Items))
 
 	// build the pod defination we want to deploy
 	pod := getPodObject(config, namespace)
@@ -203,7 +235,7 @@ func (e *awsEKS) Start(config map[string]interface{}) (string, error) {
 
 	getResponse, _ := podsClient.Get(context.TODO(), podResponse.ObjectMeta.Name, metav1.GetOptions{})
 
-	log.Printf("Get pod response %v.\n", getResponse)
+	log.Printf("Get pod response %+v.\n", getResponse.Spec)
 
 	nodeName := getResponse.Spec.NodeName
 
@@ -212,11 +244,12 @@ func (e *awsEKS) Start(config map[string]interface{}) (string, error) {
 }
 
 // Stops a k8s pod in eks
-func (e *awsEKS) Stop(config map[string]interface{}) error {
+func (e *awsExecutorEKS) Stop(config map[string]interface{}) error {
 	clientset, _ := e.newClientSet(config)
-	namespace := "sd-builds"
-	buildIdWithPrefix := config["prefix"].(string) + "-" + config["buildId"].(string)
-	podsClient := clientset.CoreV1().Pods(namespace)
+	namespace := config["namespace"].(string)
+	buildIdStr := strconv.Itoa(config["buildId"].(int))
+	buildIdWithPrefix := config["prefix"].(string) + "-" + buildIdStr
+	podsClient := clientset.client.CoreV1().Pods(namespace)
 	listPods, err := podsClient.List(context.TODO(), metav1.ListOptions{LabelSelector: fmt.Sprintf("sdbuild=%v", buildIdWithPrefix)})
 	if err != nil {
 		log.Printf("List pod response %v.\n", listPods)
@@ -232,17 +265,13 @@ func (e *awsEKS) Stop(config map[string]interface{}) error {
 }
 
 //Returns the name of executor
-func (e *awsEKS) Name() string {
+func (e *awsExecutorEKS) Name() string {
 	return e.name
 }
 
-func New() *awsEKS {
-	sess, _ := session.NewSession(&aws.Config{
-		Region: aws.String(os.Getenv("AWS_REGION"))},
-	)
-	svcEks := eks.New(sess)
-	return &awsEKS{
-		svcEks: svcEks,
-		name:   "eks",
+func New() *awsExecutorEKS {
+	return &awsExecutorEKS{
+		eksClient: newEKSService(os.Getenv("AWS_REGION")),
+		name:      "eks",
 	}
 }
