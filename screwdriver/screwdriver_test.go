@@ -97,33 +97,39 @@ func validateHeader(t *testing.T, key, value string) func(r *http.Request) {
 }
 
 func TestUpdateBuild(t *testing.T) {
-	var stats map[string]interface{}
-	mockStats := []byte("{\"Hostname\":\"node123\",\"ImagePullStartTime\":\"2012:2332532\"}")
-	_ = json.Unmarshal(mockStats, &stats)
-
-	// var stats map[string]interface{}
-	// stats["Hostname"] = "node123"
-	// stats["ImagePullStartTime"] = time.Now().In(UTCLoc),
+	var mockStatsObj map[string]interface{}
+	mockStats := []byte("{\"hostname\":\"node123\",\"imagePullStartTime\":\"2012:2332532\"}")
+	_ = json.Unmarshal(mockStats, &mockStatsObj)
+	var emptyStatsObj map[string]interface{}
+	emptyStats := []byte("{}")
+	_ = json.Unmarshal(emptyStats, &emptyStatsObj)
+	var errorStatsObj map[string]interface{}
+	errorStats := []byte("{\"hostname\":\"node123\",\"imagePullStartTime\":2332532}")
+	_ = json.Unmarshal(errorStats, &errorStatsObj)
 	tests := []struct {
 		stats         map[string]interface{}
 		statusMessage string
+		statusCode    int
 		err           error
 	}{
-		{stats, "", nil},
-		{stats, "Error: Build failed to start. Please check if your image is valid with curl, openssh installed and default user root or sudo NOPASSWD enabled.", nil},
-		{stats, "", errors.New("Invalid build update: NOTASTATUS")},
-		{stats, "", errors.New("Posting to Build Update: " +
-			"WARNING: received error from PUT(http://fakeurl/v4/builds/15): " +
-			"Put \"http://fakeurl/v4/builds/15\": " +
-			"PUT http://fakeurl/v4/builds/15 giving up after 5 attempts ")},
+		{mockStatsObj, "", 200, nil},
+		{emptyStatsObj, "", 200, errors.New("hostname value is empty or invalid: <nil>")},
+		{errorStatsObj, "", 400, errors.New("Posting to Build Stats: WARNING: received response 400 from http://fakeurl/v4/builds/15 ")},
 	}
 
 	for _, test := range tests {
 		var client *retryablehttp.Client
 		client = makeRetryableHttpClient(testMaxRetries, testRetryWaitMin, testRetryWaitMax, testHttpTimeout)
-		client.HTTPClient = makeFakeHTTPClient(t, 200, "{}")
+		client.HTTPClient = makeFakeHTTPClient(t, test.statusCode, "{}")
 		testAPI := SDAPI{"http://fakeurl", "faketoken", client}
-
+		// func(r *http.Request) {
+		// 	buf := new(bytes.Buffer)
+		// 	buf.ReadFrom(r.Body)
+		// 	want := regexp.MustCompile(`{"imagePullStartTime":"[\d-]+T[\d:.Z-]+","hostname":"node123"}`)
+		// 	if !want.MatchString(buf.String()) {
+		// 		t.Errorf("buf.String() = %q", buf.String())
+		// 	}
+		// }
 		err := testAPI.UpdateBuild(test.stats, 15, test.statusMessage)
 
 		if !reflect.DeepEqual(err, test.err) {

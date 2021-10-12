@@ -9,6 +9,8 @@ import (
 	"log"
 	"net/http"
 	"net/url"
+	"os"
+	"strconv"
 	"strings"
 	"time"
 
@@ -26,8 +28,7 @@ type API interface {
 	GetAPIURL() (string, error)
 }
 
-// BuildStatusMessagePayload is a Screwdriver Build Status Message payload.
-type BuildStatsPayload struct {
+type BuildUpdatePayload struct {
 	Stats         map[string]interface{} `json:"stats"`
 	StatusMessage string                 `json:"statusMessage,omitempty"`
 }
@@ -57,6 +58,14 @@ func tokenHeader(token string) string {
 
 // New returns a new API object
 func New(url, token string) (API, error) {
+	if strings.TrimSpace(os.Getenv("SDAPI_TIMEOUT_SECS")) != "" {
+		apiTimeout, _ := strconv.Atoi(os.Getenv("SDAPI_TIMEOUT_SECS"))
+		httpTimeout = time.Duration(apiTimeout) * time.Second
+	}
+
+	if strings.TrimSpace(os.Getenv("SDAPI_MAXRETRIES")) != "" {
+		maxRetries, _ = strconv.Atoi(os.Getenv("SDAPI_MAXRETRIES"))
+	}
 	retryClient := retryablehttp.NewClient()
 	retryClient.RetryMax = maxRetries
 	retryClient.RetryWaitMin = time.Duration(retryWaitMin) * time.Millisecond
@@ -146,11 +155,14 @@ func (a SDAPI) UpdateBuild(stats map[string]interface{}, buildID int, statusMess
 	}
 
 	var payload []byte
-	bs := &BuildStatsPayload{}
-	if stats["hostname"].(string) != "" {
-		bs.Stats = stats
+	bs := &BuildUpdatePayload{}
+	if val, ok := stats["hostname"]; !ok {
+		return fmt.Errorf("hostname value is empty or invalid: %v", val)
 	}
-
+	if val, ok := stats["imagePullStartTime"]; !ok {
+		return fmt.Errorf("imagePullStartTime value is empty or invalid: %v", val)
+	}
+	bs.Stats = stats
 	if statusMessage != "" {
 		bs.StatusMessage = statusMessage
 	}
@@ -158,8 +170,6 @@ func (a SDAPI) UpdateBuild(stats map[string]interface{}, buildID int, statusMess
 	if err != nil {
 		return fmt.Errorf("Marshaling JSON for Build Stats: %v", err)
 	}
-
-	log.Printf("bs: %+v", bs)
 	log.Printf("payload: %v", string(payload))
 
 	_, err = a.put(u, "application/json", bytes.NewReader(payload))

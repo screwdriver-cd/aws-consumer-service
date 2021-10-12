@@ -24,6 +24,10 @@ import (
 	"sigs.k8s.io/aws-iam-authenticator/pkg/token"
 )
 
+const (
+	EXECUTOR = "eks"
+)
+
 type eksClient struct {
 	service eksiface.EKSAPI
 }
@@ -261,7 +265,7 @@ func (e *awsExecutorEKS) Stop(config map[string]interface{}) error {
 	for _, i := range listPods.Items {
 		fmt.Printf("Deleting pod...%s.\n", i.Name)
 		result := podsClient.Delete(context.TODO(), i.Name, metav1.DeleteOptions{})
-		fmt.Printf("Deleted pod %q.\n", result)
+		fmt.Printf("Deleted pod %s.\n", result)
 	}
 
 	return nil
@@ -275,6 +279,6 @@ func (e *awsExecutorEKS) Name() string {
 func New() *awsExecutorEKS {
 	return &awsExecutorEKS{
 		eksClient: newEKSService(os.Getenv("AWS_REGION")),
-		name:      "eks",
+		name:      EXECUTOR,
 	}
 }

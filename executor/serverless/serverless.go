@@ -9,29 +9,38 @@ import (
 	"github.com/aws/aws-sdk-go/aws"
 	"github.com/aws/aws-sdk-go/aws/session"
 	"github.com/aws/aws-sdk-go/service/codebuild"
+	"github.com/aws/aws-sdk-go/service/codebuild/codebuildiface"
 	"github.com/aws/aws-sdk-go/service/s3"
+	"github.com/aws/aws-sdk-go/service/s3/s3iface"
 )
 
-type ExecutorAwsServerless interface {
-	Start(config map[string]interface{}) error
-	Stop(config map[string]interface{}) error
+type awsAPI struct {
+	cb codebuildiface.CodeBuildAPI
+	s3 s3iface.S3API
 }
 type awsServerless struct {
-	svcCBClient *codebuild.CodeBuild
-	svcS3Client *s3.S3
-	name        string
+	serviceClient *awsAPI
+	name          string
 }
 
-func (e *awsServerless) checkLauncherUpdate(launcherVersion string) (l bool) {
-	listResult, err := e.svcS3Client.ListObjectsV2(&s3.ListObjectsV2Input{
-		Bucket: aws.String(os.Getenv("SD_SLS_BUILD_BUCKET")),
+const (
+	EXECUTOR = "sls"
+	SDINIT   = "sdinit-"
+)
+
+func checkLauncherUpdate(serviceClient *awsAPI, launcherVersion string) bool {
+	bucket := os.Getenv("SD_SLS_BUILD_BUCKET")
+	var launcherUpdate bool = true
+
+	listResult, err := serviceClient.s3.ListObjectsV2(&s3.ListObjectsV2Input{
+		Bucket: aws.String(bucket),
 	})
 	if err != nil {
 		log.Printf("Failed to get launcher version %v", err.Error())
+		return launcherUpdate
 	}
 
-	var launcherUpdate bool = true
-	sourceIdentifier := "sdinit-" + launcherVersion
+	sourceIdentifier := SDINIT + launcherVersion
 	// check if launcher version already exists
 	if len(listResult.Contents) > 0 {
 		for _, obj := range listResult.Contents {
@@ -42,30 +51,70 @@ func (e *awsServerless) checkLauncherUpdate(launcherVersion string) (l bool) {
 	}
 	return launcherUpdate
 }
-
-// Create a codebuild project and Start a build
-func (e *awsServerless) Start(config map[string]interface{}) (string, error) {
-	launcherVersion := config["launcherVersion"].(string)
-	launcherUpdate := e.checkLauncherUpdate(launcherVersion)
-	sourceIdentifier := "sdinit-" + launcherVersion
-	project := config["jobName"].(string) + "-" + config["jobId"].(string)
-	var securityGroupIds []*string
-	for _, sg := range config["securityGroupIds"].([]string) {
-		securityGroupIds = append(securityGroupIds, aws.String(sg))
+func deleteProject(serviceClient *awsAPI, project string) error {
+	deleteProjectResponse, err := serviceClient.cb.DeleteProject(&codebuild.DeleteProjectInput{
+		Name: aws.String(project),
+	})
+	if err != nil {
+		return fmt.Errorf("Got error deleting project: %v", err)
 	}
-	var subnets []*string
-	for _, sn := range config["subnets"].([]string) {
-		subnets = append(subnets, aws.String(sn))
-	}
-	queuedTimeout := config["queuedTimeout"].(int64)
-	buildTimeout := config["buildTimeout"].(int64)
+	log.Printf("Deleted project %q", *deleteProjectResponse)
 
-	var names []*string
-	names = append(names, aws.String(project))
-	batchResult, err := e.svcCBClient.BatchGetProjects(&codebuild.BatchGetProjectsInput{
-		Names: names,
+	return nil
+}
+
+func stopBuild(serviceClient *awsAPI, project string) error {
+	buildsResponse, _ := serviceClient.cb.ListBuildsForProject(&codebuild.ListBuildsForProjectInput{
+		ProjectName: aws.String(project),
+		SortOrder:   aws.String("DESCENDING"),
 	})
 
+	log.Printf("Build ids for project %q: %v", project, buildsResponse.Ids)
+	if len(buildsResponse.Ids) > 0 {
+		buildResp, _ := serviceClient.cb.BatchGetBuilds(&codebuild.BatchGetBuildsInput{
+			Ids: []*string{
+				buildsResponse.Ids[0],
+			},
+		})
+		if string(*buildResp.Builds[0].BuildStatus) == "IN_PROGRESS" {
+			stopBuildResponse, err := serviceClient.cb.StopBuild(&codebuild.StopBuildInput{
+				Id: buildsResponse.Ids[0],
+			})
+			if err != nil {
+				return fmt.Errorf("Got error stopping build: %v", err)
+			}
+			log.Printf("Stopped build %q for project %v", project, *stopBuildResponse.Build.BuildNumber)
+		}
+	}
+	return nil
+}
+func stopBuildBatch(serviceClient *awsAPI, project string) error {
+	buildBatchesResponse, _ := serviceClient.cb.ListBuildBatchesForProject(&codebuild.ListBuildBatchesForProjectInput{
+		MaxResults:  aws.Int64(5),
+		ProjectName: aws.String(project),
+		SortOrder:   aws.String("DESCENDING"),
+	})
+	log.Printf("Build ids for project %q: %v", project, buildBatchesResponse.Ids)
+	if len(buildBatchesResponse.Ids) > 0 {
+		batchBuildResp, _ := serviceClient.cb.BatchGetBuilds(&codebuild.BatchGetBuildsInput{
+			Ids: []*string{
+				buildBatchesResponse.Ids[0],
+			},
+		})
+		if string(*batchBuildResp.Builds[0].BuildStatus) == "IN_PROGRESS" {
+			stopBuildBatchResponse, err := serviceClient.cb.StopBuildBatch(&codebuild.StopBuildBatchInput{
+				Id: buildBatchesResponse.Ids[0],
+			})
+			if err != nil {
+				return fmt.Errorf("Got error stopping build: %v", err)
+			}
+			log.Printf("Stopped build batch %q for project %v", project, *stopBuildBatchResponse.BuildBatch.BuildBatchNumber)
+		}
+	}
+	return nil
+}
+
+func getBuildSpec(config map[string]interface{}) (string, string) {
 	mainBuildspec := `version: 0.2\nphases:\n  install:\n    commands:\n      - mkdir /opt/sd && cp -r $CODEBUILD_SRC_DIR_sdinit_sdinit/opt/sd/* /opt/sd/\n  build:\n    commands:\n      - /opt/sd/launcher_entrypoint.sh /opt/sd/run.sh $TOKEN $API $STORE $TIMEOUT $SDBUILDID $UI`
 	batchBuildSpec := `version: 0.2
 batch:
@@ -96,14 +145,84 @@ phases:
 	commands:
 		- /opt/sd/launcher_entrypoint.sh /opt/sd/run.sh $TOKEN $API $STORE $TIMEOUT $SDBUILDID $UI`
 
-	initArtifact := &codebuild.ProjectArtifacts{
-		EncryptionDisabled:   aws.Bool(false),
-		Location:             aws.String(os.Getenv("SD_SLS_BUILD_BUCKET")),
-		OverrideArtifactName: aws.Bool(false),
-		Packaging:            aws.String("ZIP"),
-		Type:                 aws.String("S3"),
-		Name:                 aws.String(config["launcherVersion"].(string)),
+	return batchBuildSpec, singleBuildSpec
+}
+
+func startBuild(project string, envVars []*codebuild.EnvironmentVariable, config map[string]interface{}, serviceClient *awsAPI) error {
+	log.Printf("Starting single build for project %q", project)
+
+	buildInput := &codebuild.StartBuildInput{
+		EnvironmentVariablesOverride: envVars,
+		ProjectName:                  aws.String(project),
+		ServiceRoleOverride:          aws.String(config["roleArn"].(string)),
 	}
+	if config["logsEnabled"].(bool) {
+		buildInput.LogsConfigOverride = &codebuild.LogsConfig{
+			CloudWatchLogs: &codebuild.CloudWatchLogsConfig{
+				Status: aws.String("ENABLED"),
+			},
+		}
+	}
+	_, err := serviceClient.cb.StartBuild(buildInput)
+	return err
+}
+
+func startBuildBatch(project string, envVars []*codebuild.EnvironmentVariable, config map[string]interface{}, batchBuildSpec string, serviceClient *awsAPI) error {
+	log.Printf("Starting batch build for project %q", project)
+
+	buildBatchInput := getStartBuildBatchInput(envVars, project, config, batchBuildSpec)
+	_, err := serviceClient.cb.StartBuildBatch(buildBatchInput)
+
+	return err
+}
+
+func getStartBuildBatchInput(envVars []*codebuild.EnvironmentVariable, project string, config map[string]interface{}, batchBuildSpec string) *codebuild.StartBuildBatchInput {
+	buildBatchInput := &codebuild.StartBuildBatchInput{
+		EnvironmentVariablesOverride: envVars,
+		ProjectName:                  aws.String(project),
+		ServiceRoleOverride:          aws.String(config["roleArn"].(string)),
+		ArtifactsOverride: &codebuild.ProjectArtifacts{
+			EncryptionDisabled:   aws.Bool(false),
+			Location:             aws.String(os.Getenv("SD_SLS_BUILD_BUCKET")),
+			OverrideArtifactName: aws.Bool(false),
+			Packaging:            aws.String("ZIP"),
+			Type:                 aws.String("S3"),
+			Name:                 aws.String(config["launcherVersion"].(string)),
+		},
+		BuildBatchConfigOverride: &codebuild.ProjectBuildBatchConfig{
+			CombineArtifacts: aws.Bool(false),
+			Restrictions:     &codebuild.BatchRestrictions{MaximumBuildsAllowed: aws.Int64(2)},
+			ServiceRole:      aws.String(config["roleArn"].(string)),
+			TimeoutInMins:    aws.Int64(int64(config["buildTimeout"].(int))),
+		},
+		BuildspecOverride:  aws.String(batchBuildSpec),
+		SourceTypeOverride: aws.String("NO_SOURCE"),
+	}
+	if config["logsEnabled"].(bool) {
+		buildBatchInput.LogsConfigOverride = &codebuild.LogsConfig{
+			CloudWatchLogs: &codebuild.CloudWatchLogsConfig{
+				Status: aws.String("ENABLED"),
+			},
+		}
+	}
+	return buildBatchInput
+}
+func getRequestObject(project string, launcherVersion string, launcherUpdate bool, config map[string]interface{}) (*codebuild.CreateProjectInput, string) {
+	batchBuildSpec, singleBuildSpec := getBuildSpec(config)
+	sourceIdentifier := SDINIT + launcherVersion
+
+	var securityGroupIds []*string
+	for _, sg := range config["securityGroupIds"].([]string) {
+		securityGroupIds = append(securityGroupIds, aws.String(sg))
+	}
+
+	var subnets []*string
+	for _, sn := range config["subnets"].([]string) {
+		subnets = append(subnets, aws.String(sn))
+	}
+
+	queuedTimeout := int64(config["queuedTimeout"].(int))
+	buildTimeout := int64(config["buildTimeout"].(int))
 
 	createRequest := &codebuild.CreateProjectInput{
 		Artifacts: &codebuild.ProjectArtifacts{
@@ -154,95 +273,84 @@ phases:
 			TimeoutInMins:    aws.Int64(buildTimeout),
 		}
 	}
-	if config["dlc "].(bool) {
+	if config["dlc"].(bool) {
 		createRequest.Cache = &codebuild.ProjectCache{
 			Location: new(string),
 			Modes:    []*string{aws.String("LOCAL_DOCKER_LAYER_CACHE")},
 			Type:     aws.String("LOCAL"),
 		}
-		// this need to be set true for dlc
+
 		createRequest.Environment.PrivilegedMode = aws.Bool(true)
 	}
+	return createRequest, batchBuildSpec
+}
+
+func getEnvVars(config map[string]interface{}) []*codebuild.EnvironmentVariable {
+	return []*codebuild.EnvironmentVariable{
+		{Name: aws.String("TOKEN"), Value: aws.String(config["token"].(string))},
+		{Name: aws.String("API"), Value: aws.String(config["apiUri"].(string))},
+		{Name: aws.String("STORE"), Value: aws.String(config["storeUri"].(string))},
+		{Name: aws.String("UI"), Value: aws.String(config["uiUri"].(string))},
+		{Name: aws.String("TIMEOUT"), Value: aws.String(strconv.Itoa(config["buildTimeout"].(int)))},
+		{Name: aws.String("SDBUILDID"), Value: aws.String(strconv.Itoa(config["buildId"].(int)))},
+		{Name: aws.String("SD_NO_HAB"), Value: aws.String(strconv.FormatBool(true))},
+	}
+}
+
+// Create a codebuild project and Start a build
+func (e *awsServerless) Start(config map[string]interface{}) (string, error) {
+	launcherVersion := config["launcherVersion"].(string)
+	launcherUpdate := checkLauncherUpdate(e.serviceClient, launcherVersion)
+
+	project := config["jobName"].(string) + "-" + config["jobId"].(string)
+
+	var names []*string
+	names = append(names, aws.String(project))
+	batchResult, err := e.serviceClient.cb.BatchGetProjects(&codebuild.BatchGetProjectsInput{
+		Names: names,
+	})
+
+	if err != nil {
+		log.Printf("Error-BatchGetProjects: %v, creating project", err)
+	}
+
+	createRequest, batchBuildSpec := getRequestObject(project, launcherVersion, launcherUpdate, config)
+
 	var projectArn string
-	if len(batchResult.Projects) == 0 {
+
+	if batchResult == nil || len(batchResult.Projects) == 0 {
 		log.Printf("Project does not exist, creating project")
-		createResult, err := e.svcCBClient.CreateProject(createRequest)
+		createResult, err := e.serviceClient.cb.CreateProject(createRequest)
 		if err != nil {
-			return "", fmt.Errorf("Got error while creating projects: %v", err)
+			return "", fmt.Errorf("Error-CreateProject: %v", err)
 		}
 		log.Printf("Project created: %v", createResult.Project.Arn)
 		projectArn = *createResult.Project.Arn
 	} else {
 		log.Printf("Project already exists, updating project")
 		updateRequest := codebuild.UpdateProjectInput(*createRequest)
-		updateResult, err := e.svcCBClient.UpdateProject(&updateRequest)
+		updateResult, err := e.serviceClient.cb.UpdateProject(&updateRequest)
 		if err != nil {
-			return "", fmt.Errorf("Got error while updating projects: %v", err)
+			return "", fmt.Errorf("Error-UpdateProject: %v", err)
 		}
 		log.Printf("Project updated: %v", updateResult.Project.Arn)
 		projectArn = *updateResult.Project.Arn
 	}
 
-	var envVars []*codebuild.EnvironmentVariable = []*codebuild.EnvironmentVariable{
-		{Name: aws.String("TOKEN"), Value: aws.String(config["token"].(string))},
-		{Name: aws.String("API"), Value: aws.String(config["apiUri"].(string))},
-		{Name: aws.String("STORE"), Value: aws.String(config["storeUri"].(string))},
-		{Name: aws.String("UI"), Value: aws.String(config["uiUri"].(string))},
-		{Name: aws.String("TIMEOUT"), Value: aws.String(config["buildTimeout"].(string))},
-		{Name: aws.String("SDBUILDID"), Value: aws.String(config["buildId"].(string))},
-		{Name: aws.String("SD_NO_HAB"), Value: aws.String(strconv.FormatBool(true))},
-	}
-
 	log.Printf("Project Arn%q", projectArn)
 
-	if launcherUpdate {
-		log.Printf("Starting batch build for project %q", project)
-		buildBatchInput := &codebuild.StartBuildBatchInput{
-			EnvironmentVariablesOverride: envVars,
-			ProjectName:                  aws.String(project),
-			ServiceRoleOverride:          aws.String(config["roleArn"].(string)),
-			ArtifactsOverride:            initArtifact,
-			BuildBatchConfigOverride: &codebuild.ProjectBuildBatchConfig{
-				CombineArtifacts: aws.Bool(false),
-				Restrictions:     &codebuild.BatchRestrictions{MaximumBuildsAllowed: aws.Int64(2)},
-				ServiceRole:      aws.String(config["roleArn"].(string)),
-				TimeoutInMins:    aws.Int64(buildTimeout),
-			},
-			BuildspecOverride:  aws.String(batchBuildSpec),
-			SourceTypeOverride: aws.String("NO_SOURCE"),
-		}
-		if config["logsEnabled"].(bool) {
-			buildBatchInput.LogsConfigOverride = &codebuild.LogsConfig{
-				CloudWatchLogs: &codebuild.CloudWatchLogsConfig{
-					Status: aws.String("ENABLED"),
-				},
-			}
-		}
+	envVars := getEnvVars(config)
 
+	if launcherUpdate {
 		// starts a batch build with launcher->build else starts only the build
-		_, err = e.svcCBClient.StartBuildBatch(buildBatchInput)
-		if err != nil {
-			return "", fmt.Errorf("Got error building project: %v", err)
-		}
+		err = startBuildBatch(project, envVars, config, batchBuildSpec, e.serviceClient)
 	} else {
-		log.Printf("Starting single build for project %q", project)
 		// Start single build
-		buildInput := &codebuild.StartBuildInput{
-			EnvironmentVariablesOverride: envVars,
-			ProjectName:                  aws.String(project),
-			ServiceRoleOverride:          aws.String(config["roleArn"].(string)),
-		}
-		if config["logsEnabled"].(bool) {
-			buildInput.LogsConfigOverride = &codebuild.LogsConfig{
-				CloudWatchLogs: &codebuild.CloudWatchLogsConfig{
-					Status: aws.String("ENABLED"),
-				},
-			}
-		}
-		_, err = e.svcCBClient.StartBuild(buildInput)
-		if err != nil {
-			return "", fmt.Errorf("Got error building project: %v", err)
-		}
+		err = startBuild(project, envVars, config, e.serviceClient)
+	}
+
+	if err != nil {
+		return "", fmt.Errorf("Got error building project: %v", err)
 	}
 
 	log.Printf("Started build for project %q", project)
@@ -252,68 +360,16 @@ phases:
 
 // Stop a build and delete build project
 func (e *awsServerless) Stop(config map[string]interface{}) (err error) {
-	launcherUpdate := e.checkLauncherUpdate(config["launcherVersion"].(string))
 	project := config["jobName"].(string) + "-" + config["jobId"].(string)
-	if config["prune "].(bool) {
-		deleteProjectResponse, err := e.svcCBClient.DeleteProject(&codebuild.DeleteProjectInput{
-			Name: aws.String(project),
-		})
-		if err != nil {
-			return fmt.Errorf("Got error deleting project: %v", err)
-		}
-		log.Printf("Deleted project %q", *deleteProjectResponse)
 
-		return nil
+	if config["prune"].(bool) {
+		return deleteProject(e.serviceClient, project)
 	}
-	if launcherUpdate {
-		buildBatchesResponse, _ := e.svcCBClient.ListBuildBatchesForProject(&codebuild.ListBuildBatchesForProjectInput{
-			MaxResults:  aws.Int64(5),
-			ProjectName: aws.String(project),
-			SortOrder:   aws.String("DESCENDING"),
-		})
-		log.Printf("Build ids for project %q: %v", project, buildBatchesResponse.Ids)
-		if len(buildBatchesResponse.Ids) > 0 {
-			batchBuildResp, _ := e.svcCBClient.BatchGetBuilds(&codebuild.BatchGetBuildsInput{
-				Ids: []*string{
-					buildBatchesResponse.Ids[0],
-				},
-			})
-			if string(*batchBuildResp.Builds[0].BuildStatus) == "IN_PROGRESS" {
-				stopBuildBatchResponse, err := e.svcCBClient.StopBuildBatch(&codebuild.StopBuildBatchInput{
-					Id: buildBatchesResponse.Ids[0],
-				})
-				if err != nil {
-					return fmt.Errorf("Got error stopping build: %v", err)
-				}
-				log.Printf("Stopped build batch %q for project %v", project, *stopBuildBatchResponse.BuildBatch.BuildBatchNumber)
-			}
-		}
+	if checkLauncherUpdate(e.serviceClient, config["launcherVersion"].(string)) {
+		return stopBuildBatch(e.serviceClient, project)
 	} else {
-		buildsResponse, _ := e.svcCBClient.ListBuildsForProject(&codebuild.ListBuildsForProjectInput{
-			ProjectName: aws.String(project),
-			SortOrder:   aws.String("DESCENDING"),
-		})
-
-		log.Printf("Build ids for project %q: %v", project, buildsResponse.Ids)
-		if len(buildsResponse.Ids) > 0 {
-			buildResp, _ := e.svcCBClient.BatchGetBuilds(&codebuild.BatchGetBuildsInput{
-				Ids: []*string{
-					buildsResponse.Ids[0],
-				},
-			})
-			if string(*buildResp.Builds[0].BuildStatus) == "IN_PROGRESS" {
-				stopBuildResponse, err := e.svcCBClient.StopBuild(&codebuild.StopBuildInput{
-					Id: buildsResponse.Ids[0],
-				})
-				if err != nil {
-					return fmt.Errorf("Got error stopping build: %v", err)
-				}
-				log.Printf("Stopped build %q for project %v", project, *stopBuildResponse.Build.BuildNumber)
-			}
-		}
+		return stopBuild(e.serviceClient, project)
 	}
-
-	return nil
 }
 
 //Returns the name of executor
@@ -326,11 +382,13 @@ func New() *awsServerless {
 		Region: aws.String(os.Getenv("AWS_REGION"))},
 	)
 	// Create CodeBuild & S3 service client
-	svcCB := codebuild.New(sess)
-	svcS3 := s3.New(sess)
+	svcClient := &awsAPI{
+		s3: s3.New(sess),
+		cb: codebuild.New(sess),
+	}
+
 	return &awsServerless{
-		svcCBClient: svcCB,
-		svcS3Client: svcS3,
-		name:        "sls",
+		name:          EXECUTOR,
+		serviceClient: svcClient,
 	}
 }
