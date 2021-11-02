@@ -241,7 +241,7 @@ func (e *awsExecutorEKS) Start(config map[string]interface{}) (string, error) {
 	pod := getPodObject(config, namespace)
 	log.Printf("Pod spec %+v", pod.Spec)
 	// create pod in eks cluster
-	fmt.Println("Creating pod...")
+	log.Println("Creating pod...")
 	podResponse, errPod := podsClient.Create(context.TODO(), pod, metav1.CreateOptions{})
 	if errPod != nil {
 		return "", fmt.Errorf("Error creating pod %v", errPod)
@@ -274,9 +274,9 @@ func (e *awsExecutorEKS) Stop(config map[string]interface{}) error {
 	}
 	//delete pod in eks cluster
 	for _, i := range listPods.Items {
-		fmt.Printf("Deleting pod...%s.\n", i.Name)
+		log.Printf("Deleting pod...%s.\n", i.Name)
 		result := podsClient.Delete(context.TODO(), i.Name, metav1.DeleteOptions{})
-		fmt.Printf("Deleted pod %s.\n", result)
+		log.Printf("Deleted pod %s.\n", result)
 	}
 
 	return nil
