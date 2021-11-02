@@ -28,18 +28,24 @@ const (
 	EXECUTOR = "eks"
 )
 
+// eks client definition struct
 type eksClient struct {
 	service eksiface.EKSAPI
 }
+
+// k8s clientset definition struct
 type k8sClientset struct {
 	client kubernetes.Interface
 }
+
+// aws eks executor definition struct
 type awsExecutorEKS struct {
 	name         string
 	eksClient    *eksClient
 	k8sClientset *k8sClientset
 }
 
+// describes an eks cluster
 func (c *eksClient) describeCluster(cluster_name string) (*eks.DescribeClusterOutput, error) {
 	if cluster_name == "" {
 		return nil, errors.New("cluster name is empty")
@@ -59,7 +65,7 @@ func (c *eksClient) describeCluster(cluster_name string) (*eks.DescribeClusterOu
 	return cluster_info, err
 }
 
-// newAWSService returns a new instance of emr
+// newAWSService returns a new instance of eks
 func newEKSService(region string) *eksClient {
 	sess, err := session.NewSession(&aws.Config{
 		Region: aws.String(region)},
@@ -73,6 +79,8 @@ func newEKSService(region string) *eksClient {
 		service: svcEks,
 	}
 }
+
+// gets the token for creating clientset
 func (e *awsExecutorEKS) getToken(cluster_name *string) (string, error) {
 	gen, err := token.NewGenerator(true, false)
 	if err != nil {
@@ -87,6 +95,8 @@ func (e *awsExecutorEKS) getToken(cluster_name *string) (string, error) {
 	}
 	return tok.Token, nil
 }
+
+// Returns a new client set for kubernetes
 func (e *awsExecutorEKS) newClientSet(config map[string]interface{}) (*k8sClientset, error) {
 	if e.k8sClientset != nil {
 		return e.k8sClientset, nil
@@ -126,6 +136,7 @@ func (e *awsExecutorEKS) newClientSet(config map[string]interface{}) (*k8sClient
 	return e.k8sClientset, nil
 }
 
+// gets the pod object for creating pod
 func getPodObject(config map[string]interface{}, namespace string) *core.Pod {
 	buildIdStr := strconv.Itoa(config["buildId"].(int))
 	buildIdWithPrefix := config["prefix"].(string) + "-" + buildIdStr
@@ -219,7 +230,7 @@ func getPodObject(config map[string]interface{}, namespace string) *core.Pod {
 	}
 }
 
-// Start a k8s pod in eks
+// Start a kubernetes pod in eks cluster
 func (e *awsExecutorEKS) Start(config map[string]interface{}) (string, error) {
 	clientset, _ := e.newClientSet(config)
 	namespace := config["namespace"].(string)
@@ -248,7 +259,7 @@ func (e *awsExecutorEKS) Start(config map[string]interface{}) (string, error) {
 	return nodeName, nil
 }
 
-// Stops a k8s pod in eks
+// Stops a kubernetes pod in eks cluster
 func (e *awsExecutorEKS) Stop(config map[string]interface{}) error {
 	clientset, _ := e.newClientSet(config)
 	namespace := config["namespace"].(string)
@@ -276,6 +287,7 @@ func (e *awsExecutorEKS) Name() string {
 	return e.name
 }
 
+// Returns a new instance of EKS executor
 func New() *awsExecutorEKS {
 	return &awsExecutorEKS{
 		eksClient: newEKSService(os.Getenv("AWS_REGION")),

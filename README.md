@@ -7,7 +7,7 @@ This is the package for Screwdriver continuous delivery solution that receives a
 ## Usage
 
 ```bash
-go get aws-consumer-service
+go install github.com/screwdriver-cd/aws-consumer-service@latest
 ```
 
 ## Executors

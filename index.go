@@ -25,18 +25,21 @@ var UTCLoc, _ = time.LoadLocation("UTC")
 var api = sd.New
 var executorsList = []iExecutor{eksExecutor.New(), slsExecutor.New()}
 
+// structure definition for build message
 type BuildMessage struct {
 	Job          string                 `json:"job"`
 	BuildConfig  map[string]interface{} `json:"buildConfig"`
 	ExecutorType string                 `json:"executorType"`
 }
 
+// iExecutor interface with method definition
 type iExecutor interface {
 	Start(config map[string]interface{}) (string, error)
 	Stop(config map[string]interface{}) error
 	Name() string
 }
 
+// select the executor based on the executor name
 func GetExecutor(name string) iExecutor {
 	var currentExecutor iExecutor
 	for _, v := range executorsList {
@@ -48,6 +51,7 @@ func GetExecutor(name string) iExecutor {
 	return currentExecutor
 }
 
+// updates build stats
 func UpdateBuildStats(hostname string, buildId int, api sd.API) {
 	if hostname != "" { // update SD stats
 		stats := map[string]interface{}{
@@ -60,6 +64,7 @@ func UpdateBuildStats(hostname string, buildId int, api sd.API) {
 	}
 }
 
+// processes messages received from the kafka broker endpoint
 var ProcessMessage = func(id int, value string, wg *sync.WaitGroup, ctx context.Context) error {
 	defer wg.Done()
 
@@ -117,6 +122,7 @@ var ProcessMessage = func(id int, value string, wg *sync.WaitGroup, ctx context.
 	return nil
 }
 
+//recovers panic
 func recoverPanic() {
 	if p := recover(); p != nil {
 		filename := fmt.Sprintf("stacktrace-%s", time.Now().Format(time.RFC3339))
@@ -141,7 +147,7 @@ func finalRecover() {
 	// os.Exit(0)
 }
 
-// map[string][]KafkaRecord
+// go lambda reqest handler with event type map[string][]KafkaRecord
 func HandleRequest(ctx context.Context, request events.KafkaEvent) (string, error) {
 	eventSize := unsafe.Sizeof(request)
 	log.Printf("size of event received %v", eventSize)
@@ -167,6 +173,7 @@ func HandleRequest(ctx context.Context, request events.KafkaEvent) (string, erro
 	return fmt.Sprintf("Finished processing messages: %v", count), nil
 }
 
+// main function for go lambda
 func main() {
 	lambda.Start(HandleRequest)
 }

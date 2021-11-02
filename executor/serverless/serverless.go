@@ -14,10 +14,13 @@ import (
 	"github.com/aws/aws-sdk-go/service/s3/s3iface"
 )
 
+// aws api definition struct
 type awsAPI struct {
 	cb codebuildiface.CodeBuildAPI
 	s3 s3iface.S3API
 }
+
+// serverless definition struct
 type awsServerless struct {
 	serviceClient *awsAPI
 	name          string
@@ -28,6 +31,7 @@ const (
 	SDINIT   = "sdinit-"
 )
 
+// checks if launcher update is required
 func checkLauncherUpdate(serviceClient *awsAPI, launcherVersion string) bool {
 	bucket := os.Getenv("SD_SLS_BUILD_BUCKET")
 	var launcherUpdate bool = true
@@ -51,6 +55,8 @@ func checkLauncherUpdate(serviceClient *awsAPI, launcherVersion string) bool {
 	}
 	return launcherUpdate
 }
+
+// deletes a build project using codebuild service api
 func deleteProject(serviceClient *awsAPI, project string) error {
 	deleteProjectResponse, err := serviceClient.cb.DeleteProject(&codebuild.DeleteProjectInput{
 		Name: aws.String(project),
@@ -63,6 +69,7 @@ func deleteProject(serviceClient *awsAPI, project string) error {
 	return nil
 }
 
+// stops a build using codebuild service api
 func stopBuild(serviceClient *awsAPI, project string) error {
 	buildsResponse, _ := serviceClient.cb.ListBuildsForProject(&codebuild.ListBuildsForProjectInput{
 		ProjectName: aws.String(project),
@@ -88,6 +95,8 @@ func stopBuild(serviceClient *awsAPI, project string) error {
 	}
 	return nil
 }
+
+//stops builds running in batch using codebuild service api
 func stopBuildBatch(serviceClient *awsAPI, project string) error {
 	buildBatchesResponse, _ := serviceClient.cb.ListBuildBatchesForProject(&codebuild.ListBuildBatchesForProjectInput{
 		MaxResults:  aws.Int64(5),
@@ -114,6 +123,7 @@ func stopBuildBatch(serviceClient *awsAPI, project string) error {
 	return nil
 }
 
+// gets the formatted build spec files for codebuild project
 func getBuildSpec(config map[string]interface{}) (string, string) {
 	mainBuildspec := `version: 0.2\nphases:\n  install:\n    commands:\n      - mkdir /opt/sd && cp -r $CODEBUILD_SRC_DIR_sdinit_sdinit/opt/sd/* /opt/sd/\n  build:\n    commands:\n      - /opt/sd/launcher_entrypoint.sh /opt/sd/run.sh $TOKEN $API $STORE $TIMEOUT $SDBUILDID $UI`
 	batchBuildSpec := `version: 0.2
@@ -148,6 +158,7 @@ phases:
 	return batchBuildSpec, singleBuildSpec
 }
 
+// starts a build using codebuild service api
 func startBuild(project string, envVars []*codebuild.EnvironmentVariable, config map[string]interface{}, serviceClient *awsAPI) error {
 	log.Printf("Starting single build for project %q", project)
 
@@ -167,6 +178,7 @@ func startBuild(project string, envVars []*codebuild.EnvironmentVariable, config
 	return err
 }
 
+// starts builds in batch using codebuild service api
 func startBuildBatch(project string, envVars []*codebuild.EnvironmentVariable, config map[string]interface{}, batchBuildSpec string, serviceClient *awsAPI) error {
 	log.Printf("Starting batch build for project %q", project)
 
@@ -176,6 +188,7 @@ func startBuildBatch(project string, envVars []*codebuild.EnvironmentVariable, c
 	return err
 }
 
+// gets the input required for running a build batch
 func getStartBuildBatchInput(envVars []*codebuild.EnvironmentVariable, project string, config map[string]interface{}, batchBuildSpec string) *codebuild.StartBuildBatchInput {
 	buildBatchInput := &codebuild.StartBuildBatchInput{
 		EnvironmentVariablesOverride: envVars,
@@ -207,6 +220,8 @@ func getStartBuildBatchInput(envVars []*codebuild.EnvironmentVariable, project s
 	}
 	return buildBatchInput
 }
+
+// gets the requests object for create project
 func getRequestObject(project string, launcherVersion string, launcherUpdate bool, config map[string]interface{}) (*codebuild.CreateProjectInput, string) {
 	batchBuildSpec, singleBuildSpec := getBuildSpec(config)
 	sourceIdentifier := SDINIT + launcherVersion
@@ -285,6 +300,7 @@ func getRequestObject(project string, launcherVersion string, launcherUpdate boo
 	return createRequest, batchBuildSpec
 }
 
+// gets the environment variables object
 func getEnvVars(config map[string]interface{}) []*codebuild.EnvironmentVariable {
 	return []*codebuild.EnvironmentVariable{
 		{Name: aws.String("TOKEN"), Value: aws.String(config["token"].(string))},
@@ -377,6 +393,7 @@ func (e *awsServerless) Name() string {
 	return e.name
 }
 
+//Returns a new instance of executor and service client
 func New() *awsServerless {
 	sess, _ := session.NewSession(&aws.Config{
 		Region: aws.String(os.Getenv("AWS_REGION"))},

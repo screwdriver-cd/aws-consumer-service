@@ -1,27 +1,30 @@
 shared:
-    image: golang:1.15.5
+    image: golang:1.17.2
     environment:
-        GO111MODULE: on
+        GOPATH: /sd/workspace
 
 jobs:
     main:
         environment:
-            SD_SONAR_OPTS:  "-Dsonar.sources=./ -Dsonar.exclusions=**/*_test.go,**/vendor/** -Dsonar.tests=./ -Dsonar.test.inclusions=**/*_test.go -Dsonar.test.exclusions=**/vendor/** -Dsonar.go.coverage.reportPaths=${SD_ARTIFACTS_DIR}/coverage.out -Dsonar.go.tests.reportPaths=${SD_ARTIFACTS_DIR}/report.json"
-        requires: [~commit, ~pr]
+            SD_SONAR_OPTS: "-Dsonar.sources=./ -Dsonar.exclusions=**/*_test.go,**/vendor/** -Dsonar.tests=./ -Dsonar.test.inclusions=**/*_test.go -Dsonar.test.exclusions=**/vendor/** -Dsonar.go.coverage.reportPaths=${SD_ARTIFACTS_DIR}/coverage.out -Dsonar.go.tests.reportPaths=${SD_ARTIFACTS_DIR}/report.json"
+        requires: [~pr, ~commit]
         steps:
             - gover: go version
+            - tidy: |
+                  go mod tidy
+                  echo 'This step failed because there is an unused module in the go.mod file.'
+                  echo 'Retry again after using the "go mod tidy" command.'
+                  git diff --exit-code --quiet HEAD ./go.mod ./go.sum
             - install: go mod download
             - vet: go vet ./...
-            - gofmt: (! gofmt -d . | grep '^')
-            - test-setup: go get gotest.tools/gotestsum@v0.6.0
-            - test: gotestsum --format testname --jsonfile ${SD_ARTIFACTS_DIR}/report.json -- -coverprofile=${SD_ARTIFACTS_DIR}/coverage.out ./...
-            # Ensure we can compile
-            - build: go build -a -o service
+            - gofmt: (! gofmt -d -s . | grep '^')
+            - test: make test JSONFILE=${SD_ARTIFACTS_DIR}/report.json COVERPROFILE=${SD_ARTIFACTS_DIR}/coverage.out
+            - build: go build -a -o /dev/null
             - getreleaser: curl -sfL https://install.goreleaser.com/github.com/goreleaser/goreleaser.sh | sh
-            # Test cross-compiling as well
             - test-release: ./bin/goreleaser release --snapshot
+
     publish:
-        requires: main
+        requires: [main]
         steps:
             - setup-ci: git clone https://github.com/screwdriver-cd/toolbox.git ci
             - get: go mod download
