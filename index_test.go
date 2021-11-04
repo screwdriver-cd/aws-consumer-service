@@ -112,8 +112,8 @@ func TestHandleRequest(t *testing.T) {
 		{
 			request: events.KafkaEvent{
 				Records: map[string][]events.KafkaRecord{
-					"builds-551964337302-0": []events.KafkaRecord{
-						events.KafkaRecord{
+					"builds-551964337302-0": {
+						{
 							Topic:         TestTopic,
 							Partition:     0,
 							Offset:        12722,

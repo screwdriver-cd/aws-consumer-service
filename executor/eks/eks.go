@@ -155,7 +155,7 @@ func getPodObject(config map[string]interface{}, namespace string) *core.Pod {
 			RestartPolicy:                 core.RestartPolicyNever,
 			DNSPolicy:                     core.DNSClusterFirst,
 			Containers: []core.Container{
-				core.Container{
+				{
 					Name:            buildIdWithPrefix,
 					Image:           config["container"].(string),
 					ImagePullPolicy: core.PullAlways,
@@ -176,16 +176,16 @@ func getPodObject(config map[string]interface{}, namespace string) *core.Pod {
 						},
 					},
 					Env: []core.EnvVar{
-						core.EnvVar{Name: "SD_RUNTIME_CLASS", Value: ""},
-						core.EnvVar{Name: "SD_PUSHGATEWAY_URL", Value: ""},
-						core.EnvVar{Name: "SD_TERMINATION_GRACE_PERIOD_SECONDS", Value: "60"}, //string(core.DefaultTerminationGracePeriodSeconds)
-						core.EnvVar{Name: "CONTAINER_IMAGE", Value: config["container"].(string)},
-						core.EnvVar{Name: "SD_PIPELINE_ID", Value: config["pipelineId"].(string)},
-						core.EnvVar{Name: "SD_BUILD_PREFIX", Value: config["prefix"].(string)},
-						core.EnvVar{Name: "NODE_ID", ValueFrom: &core.EnvVarSource{FieldRef: &core.ObjectFieldSelector{FieldPath: "spec.nodeName"}}},
-						core.EnvVar{Name: "SD_BASE_COMMAND_PATH", Value: "/sd/commands/"},
-						core.EnvVar{Name: "SD_TEMP", Value: "/opt/sd_tmp"},
-						core.EnvVar{Name: "DOCKER_HOST", Value: "tcp"},
+						{Name: "SD_RUNTIME_CLASS", Value: ""},
+						{Name: "SD_PUSHGATEWAY_URL", Value: ""},
+						{Name: "SD_TERMINATION_GRACE_PERIOD_SECONDS", Value: "60"}, //string(core.DefaultTerminationGracePeriodSeconds)
+						{Name: "CONTAINER_IMAGE", Value: config["container"].(string)},
+						{Name: "SD_PIPELINE_ID", Value: config["pipelineId"].(string)},
+						{Name: "SD_BUILD_PREFIX", Value: config["prefix"].(string)},
+						{Name: "NODE_ID", ValueFrom: &core.EnvVarSource{FieldRef: &core.ObjectFieldSelector{FieldPath: "spec.nodeName"}}},
+						{Name: "SD_BASE_COMMAND_PATH", Value: "/sd/commands/"},
+						{Name: "SD_TEMP", Value: "/opt/sd_tmp"},
+						{Name: "DOCKER_HOST", Value: "tcp"},
 					},
 					Command: []string{"/opt/sd/launcher_entrypoint.sh"},
 					Args: []string{
@@ -199,31 +199,31 @@ func getPodObject(config map[string]interface{}, namespace string) *core.Pod {
 						),
 					},
 					VolumeMounts: []core.VolumeMount{
-						core.VolumeMount{Name: "podinfo", MountPath: "/etc/podinfo", ReadOnly: true},
-						core.VolumeMount{MountPath: "/opt/sd", Name: "screwdriver", ReadOnly: true},
-						core.VolumeMount{MountPath: "/opt/sd_tmp", Name: "sdtemp"},
-						core.VolumeMount{MountPath: "/workspace", Name: "workspace"},
+						{Name: "podinfo", MountPath: "/etc/podinfo", ReadOnly: true},
+						{MountPath: "/opt/sd", Name: "screwdriver", ReadOnly: true},
+						{MountPath: "/opt/sd_tmp", Name: "sdtemp"},
+						{MountPath: "/workspace", Name: "workspace"},
 					},
 				},
 			},
 			InitContainers: []core.Container{
-				core.Container{
+				{
 					Name:    "launcher-" + buildIdWithPrefix,
 					Image:   config["launcherImage"].(string),
 					Command: []string{"/bin/sh", "-c", "echo launcher_start_ts:`date +%s` > /workspace/metrics && if ! [ -f /opt/launcher/launch ]; then TEMP_DIR=`mktemp -d -p /opt/launcher` && cp -a /opt/sd/* $TEMP_DIR && mkdir -p $TEMP_DIR/hab && cp -a /hab/* $TEMP_DIR/hab && mv $TEMP_DIR/* /opt/launcher && rm -rf $TEMP_DIR || true; else ls /opt/launcher; fi; echo launcher_end_ts:`date +%s` >> /workspace/metrics"},
 					VolumeMounts: []core.VolumeMount{
-						core.VolumeMount{MountPath: "/opt/launcher", Name: "screwdriver"},
-						core.VolumeMount{MountPath: "/workspace", Name: "workspace"},
+						{MountPath: "/opt/launcher", Name: "screwdriver"},
+						{MountPath: "/workspace", Name: "workspace"},
 					},
 				},
 			},
 			Volumes: []core.Volume{
-				core.Volume{Name: "screwdriver", VolumeSource: core.VolumeSource{HostPath: &core.HostPathVolumeSource{Path: "/opt/screwdriver/sdlauncher/" + config["launcherVersion"].(string)}}}, //Type: &core.HostPathType("DirectoryOrCreate")
-				core.Volume{Name: "sdtemp", VolumeSource: core.VolumeSource{HostPath: &core.HostPathVolumeSource{Path: "/opt/screwdriver/tmp_" + buildIdStr}}},
-				core.Volume{Name: "workspace", VolumeSource: core.VolumeSource{EmptyDir: &core.EmptyDirVolumeSource{}}},
-				core.Volume{Name: "podinfo", VolumeSource: core.VolumeSource{DownwardAPI: &core.DownwardAPIVolumeSource{Items: []core.DownwardAPIVolumeFile{
-					core.DownwardAPIVolumeFile{Path: "labels", FieldRef: &core.ObjectFieldSelector{FieldPath: "metadata.labels"}},
-					core.DownwardAPIVolumeFile{Path: "annotations", FieldRef: &core.ObjectFieldSelector{FieldPath: "metadata.annotations"}},
+				{Name: "screwdriver", VolumeSource: core.VolumeSource{HostPath: &core.HostPathVolumeSource{Path: "/opt/screwdriver/sdlauncher/" + config["launcherVersion"].(string)}}}, //Type: &core.HostPathType("DirectoryOrCreate")
+				{Name: "sdtemp", VolumeSource: core.VolumeSource{HostPath: &core.HostPathVolumeSource{Path: "/opt/screwdriver/tmp_" + buildIdStr}}},
+				{Name: "workspace", VolumeSource: core.VolumeSource{EmptyDir: &core.EmptyDirVolumeSource{}}},
+				{Name: "podinfo", VolumeSource: core.VolumeSource{DownwardAPI: &core.DownwardAPIVolumeSource{Items: []core.DownwardAPIVolumeFile{
+					{Path: "labels", FieldRef: &core.ObjectFieldSelector{FieldPath: "metadata.labels"}},
+					{Path: "annotations", FieldRef: &core.ObjectFieldSelector{FieldPath: "metadata.annotations"}},
 				}}}},
 			},
 		},
