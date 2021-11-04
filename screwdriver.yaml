@@ -12,6 +12,7 @@ jobs:
             - gover: go version
             - install: go mod download
             - vet: go vet ./...
+            - tidy: go mod tidy
             - gofmt: (! gofmt -d -s . | grep '^')
             - test: make test JSONFILE=${SD_ARTIFACTS_DIR}/report.json COVERPROFILE=${SD_ARTIFACTS_DIR}/coverage.out
             - build: go build -a -o /dev/null
