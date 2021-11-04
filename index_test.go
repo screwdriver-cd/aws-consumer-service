@@ -50,12 +50,12 @@ func (e *mockSlsExecutor) Stop(config map[string]interface{}) error {
 	stopSlsFn = "stopsls"
 	return nil
 }
-func NewSls() *mockSlsExecutor {
+func newSls() *mockSlsExecutor {
 	return &mockSlsExecutor{
 		name: "sls",
 	}
 }
-func NewEks() *mockEksExecutor {
+func newEks() *mockEksExecutor {
 	return &mockEksExecutor{
 		name: "eks",
 	}
@@ -97,13 +97,13 @@ func (f MockAPI) GetAPIURL() (string, error) {
 	return "", nil
 }
 
-func newSdApi(apiUri string, token string) (sd.API, error) {
+func newSdAPI(apiURI string, token string) (sd.API, error) {
 	return sd.API(MockAPI{}), nil
 }
 
 func TestHandleRequest(t *testing.T) {
-	executorsList = []iExecutor{NewSls(), NewEks()}
-	api = newSdApi
+	executorsList = []IExecutor{newSls(), newEks()}
+	api = newSdAPI
 	tests := []struct {
 		request events.KafkaEvent
 		expect  string
@@ -142,7 +142,7 @@ func TestHandleRequest(t *testing.T) {
 }
 
 func TestGetExecutor(t *testing.T) {
-	executorsList = []iExecutor{NewSls(), NewEks()}
+	executorsList = []IExecutor{newSls(), newEks()}
 	tests := []struct {
 		name   string
 		expect interface{}
@@ -158,8 +158,8 @@ func TestGetExecutor(t *testing.T) {
 }
 
 func TestEksStartMessage(t *testing.T) {
-	executorsList = []iExecutor{NewSls(), NewEks()}
-	api = newSdApi
+	executorsList = []IExecutor{newSls(), newEks()}
+	api = newSdAPI
 
 	var wg sync.WaitGroup
 	wg.Add(1)
@@ -183,8 +183,8 @@ func TestEksStartMessage(t *testing.T) {
 	}
 }
 func TestEksStopMessage(t *testing.T) {
-	executorsList = []iExecutor{NewSls(), NewEks()}
-	api = newSdApi
+	executorsList = []IExecutor{newSls(), newEks()}
+	api = newSdAPI
 
 	var wg sync.WaitGroup
 	wg.Add(1)
@@ -208,8 +208,8 @@ func TestEksStopMessage(t *testing.T) {
 	}
 }
 func TestSlsStopMessage(t *testing.T) {
-	executorsList = []iExecutor{NewSls(), NewEks()}
-	api = newSdApi
+	executorsList = []IExecutor{newSls(), newEks()}
+	api = newSdAPI
 
 	var wg sync.WaitGroup
 	wg.Add(1)
@@ -233,8 +233,8 @@ func TestSlsStopMessage(t *testing.T) {
 	}
 }
 func TestSlsStartMessage(t *testing.T) {
-	executorsList = []iExecutor{NewSls(), NewEks()}
-	api = newSdApi
+	executorsList = []IExecutor{newSls(), newEks()}
+	api = newSdAPI
 
 	var wg sync.WaitGroup
 	wg.Add(1)

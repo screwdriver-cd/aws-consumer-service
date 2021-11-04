@@ -21,27 +21,27 @@ import (
 	sd "github.com/screwdriver-cd/aws-consumer-service/screwdriver"
 )
 
-var UTCLoc, _ = time.LoadLocation("UTC")
+var utcLoc, _ = time.LoadLocation("UTC")
 var api = sd.New
-var executorsList = []iExecutor{eksExecutor.New(), slsExecutor.New()}
+var executorsList = []IExecutor{eksExecutor.New(), slsExecutor.New()}
 
-// structure definition for build message
+// BuildMessage structure definition
 type BuildMessage struct {
 	Job          string                 `json:"job"`
 	BuildConfig  map[string]interface{} `json:"buildConfig"`
 	ExecutorType string                 `json:"executorType"`
 }
 
-// iExecutor interface with method definition
-type iExecutor interface {
+// IExecutor interface with method definition
+type IExecutor interface {
 	Start(config map[string]interface{}) (string, error)
 	Stop(config map[string]interface{}) error
 	Name() string
 }
 
-// select the executor based on the executor name
-func GetExecutor(name string) iExecutor {
-	var currentExecutor iExecutor
+// GetExecutor selects the executor based on the executor name
+func GetExecutor(name string) IExecutor {
+	var currentExecutor IExecutor
 	for _, v := range executorsList {
 		if v.Name() == name {
 			currentExecutor = v
@@ -51,20 +51,20 @@ func GetExecutor(name string) iExecutor {
 	return currentExecutor
 }
 
-// updates build stats
-func UpdateBuildStats(hostname string, buildId int, api sd.API) {
+// UpdateBuildStats calls SD API to update stats
+func UpdateBuildStats(hostname string, buildID int, api sd.API) {
 	if hostname != "" { // update SD stats
 		stats := map[string]interface{}{
 			"hostname":           hostname,
-			"imagePullStartTime": time.Now().In(UTCLoc),
+			"imagePullStartTime": time.Now().In(utcLoc),
 		}
-		if apierr := api.UpdateBuild(stats, int(buildId), ""); apierr != nil {
+		if apierr := api.UpdateBuild(stats, int(buildID), ""); apierr != nil {
 			log.Printf("Updating build stats: %v", apierr)
 		}
 	}
 }
 
-// processes messages received from the kafka broker endpoint
+// ProcessMessage receives messages from the kafka broker endpoint and processes them
 var ProcessMessage = func(id int, value string, wg *sync.WaitGroup, ctx context.Context) error {
 	defer wg.Done()
 
@@ -114,9 +114,9 @@ var ProcessMessage = func(id int, value string, wg *sync.WaitGroup, ctx context.
 		} else {
 			log.Printf("%v build successful", job)
 		}
-		buildId := buildConfig["buildId"].(float64)
+		buildID := buildConfig["buildId"].(float64)
 		api, _ := api(buildConfig["apiUri"].(string), buildConfig["token"].(string))
-		UpdateBuildStats(hostname, int(buildId), api)
+		UpdateBuildStats(hostname, int(buildID), api)
 	}
 
 	return nil
@@ -147,7 +147,7 @@ func finalRecover() {
 	// os.Exit(0)
 }
 
-// go lambda reqest handler with event type map[string][]KafkaRecord
+// HandleRequest is a go lambda request handler with event type map[string][]KafkaRecord
 func HandleRequest(ctx context.Context, request events.KafkaEvent) (string, error) {
 	eventSize := unsafe.Sizeof(request)
 	log.Printf("size of event received %v", eventSize)

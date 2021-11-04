@@ -388,12 +388,12 @@ func (e *awsServerless) Stop(config map[string]interface{}) (err error) {
 	}
 }
 
-//Returns the name of executor
+// Name returns the name of executor
 func (e *awsServerless) Name() string {
 	return e.name
 }
 
-//Returns a new instance of executor and service client
+// New returns a new instance of executor and service client
 func New() *awsServerless {
 	sess, _ := session.NewSession(&aws.Config{
 		Region: aws.String(os.Getenv("AWS_REGION"))},
