@@ -23,12 +23,12 @@ var (
 	expectedClusterOutputArn = "arn:" + clusterName
 	testNamespace            = "sd-builds"
 	testPrefix               = "beta"
-	testBuildId              = 1234
+	testBuildID              = 1234
 	testConfig               = map[string]interface{}{
 		"clusterName":        clusterName,
 		"namespace":          testNamespace,
 		"prefix":             testPrefix,
-		"buildId":            testBuildId,
+		"buildId":            testBuildID,
 		"serviceAccountName": "default",
 		"container":          "node:12",
 		"privilegedMode":     false,
@@ -76,7 +76,7 @@ type awsEKSExecutorMock struct {
 	k8sClientSet *fake.Clientset
 }
 
-func (e *awsEKSExecutorMock) getToken(cluster_name *string) (string, error) {
+func (e *awsEKSExecutorMock) getToken(clusterName *string) (string, error) {
 	return "token:1234", nil
 }
 
@@ -175,7 +175,7 @@ func TestK8sClientSet(t *testing.T) {
 
 	mockEKSClient.On("DescribeCluster", mockDescribeClusterInput).Return(mockDescribeClusterOutput, nil)
 
-	executor := &awsExecutorEKS{
+	executor := &AwsExecutorEKS{
 		eksClient: mockEKS,
 	}
 	tests := []struct {
@@ -232,7 +232,7 @@ func TestStart(t *testing.T) {
 		},
 		Status: core.NodeStatus{},
 	})
-	executor := &awsExecutorEKS{
+	executor := &AwsExecutorEKS{
 		k8sClientset: &k8sClientset{
 			client: kubeclient,
 		},
@@ -263,7 +263,7 @@ func TestStart(t *testing.T) {
 		},
 	}
 	coreClient := executor.k8sClientset.client.CoreV1()
-	buildIdWithPrefix := testPrefix + "-" + "1234"
+	buildIDWithPrefix := testPrefix + "-" + "1234"
 	for _, test := range tests {
 		got, err := executor.Start(test.request)
 		assert.IsType(t, test.expectedNode, got)
@@ -274,19 +274,19 @@ func TestStart(t *testing.T) {
 		}
 		//test.request["namespace"].(string)
 		pods, err := coreClient.Pods(testNamespace).List(context.TODO(),
-			metav1.ListOptions{LabelSelector: fmt.Sprintf("sdbuild=%v", buildIdWithPrefix)})
+			metav1.ListOptions{LabelSelector: fmt.Sprintf("sdbuild=%v", buildIDWithPrefix)})
 		assert.Equal(t, test.expectedPodCount, len(pods.Items))
 	}
 }
 
 func TestStop(t *testing.T) {
-	buildIdWithPrefix := testPrefix + "-" + "1234"
-	podName := buildIdWithPrefix + "-erbf3"
+	buildIDWithPrefix := testPrefix + "-" + "1234"
+	podName := buildIDWithPrefix + "-erbf3"
 	kubeclient := fake.NewSimpleClientset(&core.Pod{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      podName,
 			Namespace: testNamespace,
-			Labels:    map[string]string{"app": "screwdriver", "tier": "builds", "sdbuild": buildIdWithPrefix},
+			Labels:    map[string]string{"app": "screwdriver", "tier": "builds", "sdbuild": buildIDWithPrefix},
 		},
 	})
 	errorConfig := make(map[string]interface{})
@@ -295,7 +295,7 @@ func TestStop(t *testing.T) {
 	}
 	errorConfig["namespace"] = "default"
 
-	executor := &awsExecutorEKS{
+	executor := &AwsExecutorEKS{
 		k8sClientset: &k8sClientset{
 			client: kubeclient,
 		},

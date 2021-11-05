@@ -17,18 +17,18 @@ import (
 var (
 	testNamespace       = "sd-builds"
 	testJobName         = "deploy"
-	testJobId           = "123"
+	testJobID           = "123"
 	testPrefix          = "beta"
-	testBuildId         = 1234
+	testBuildID         = 1234
 	testBucket          = "test-bucket-123"
 	testLauncherVersion = "v101"
 	testLauncherUpdate  = false
 	testConfig          = map[string]interface{}{
 		"jobName":                  "deploy",
-		"jobId":                    testJobId,
+		"jobId":                    testJobID,
 		"namespace":                testNamespace,
 		"prefix":                   testPrefix,
-		"buildId":                  testBuildId,
+		"buildId":                  testBuildID,
 		"container":                "node:12",
 		"privilegedMode":           false,
 		"cpuLimit":                 "2Gi",
@@ -125,7 +125,7 @@ func setup() (*awsAPI, *mockCodeBuildClient, *mockS3Client) {
 
 func TestCheckLauncherUpdate(t *testing.T) {
 	mockServiceClient, _, mockS3API := setup()
-	sourceId := "sdinit-" + testLauncherVersion
+	sourceID := "sdinit-" + testLauncherVersion
 
 	os.Setenv("SD_SLS_BUILD_BUCKET", testBucket)
 	defer os.Unsetenv("SD_SLS_BUILD_BUCKET")
@@ -150,7 +150,7 @@ func TestCheckLauncherUpdate(t *testing.T) {
 		},
 	}
 	for _, testCase := range testCases {
-		mockS3API.On("ListObjectsV2", &s3.ListObjectsV2Input{Bucket: aws.String(testBucket)}).Return(&s3.ListObjectsV2Output{Contents: []*s3.Object{{Key: aws.String(sourceId)}}}, testCase.expectedError)
+		mockS3API.On("ListObjectsV2", &s3.ListObjectsV2Input{Bucket: aws.String(testBucket)}).Return(&s3.ListObjectsV2Output{Contents: []*s3.Object{{Key: aws.String(sourceID)}}}, testCase.expectedError)
 		got := checkLauncherUpdate(mockServiceClient, testCase.expectedInput)
 		assert.IsType(t, testCase.expectedOutput, got)
 		assert.Equal(t, testCase.expectedOutput, got)
@@ -159,7 +159,7 @@ func TestCheckLauncherUpdate(t *testing.T) {
 }
 func TestCheckLauncherUpdateWithFailure(t *testing.T) {
 	mockServiceClient, _, mockS3API := setup()
-	sourceId := "sdinit-" + testLauncherVersion
+	sourceID := "sdinit-" + testLauncherVersion
 
 	os.Setenv("SD_SLS_BUILD_BUCKET", testBucket)
 	defer os.Unsetenv("SD_SLS_BUILD_BUCKET")
@@ -175,14 +175,14 @@ func TestCheckLauncherUpdateWithFailure(t *testing.T) {
 		expectedOutput: true,
 		expectedError:  errors.New("Error getting object"),
 	}
-	mockS3API.On("ListObjectsV2", &s3.ListObjectsV2Input{Bucket: aws.String(testBucket)}).Return(&s3.ListObjectsV2Output{Contents: []*s3.Object{{Key: aws.String(sourceId)}}}, errTestCase.expectedError)
+	mockS3API.On("ListObjectsV2", &s3.ListObjectsV2Input{Bucket: aws.String(testBucket)}).Return(&s3.ListObjectsV2Output{Contents: []*s3.Object{{Key: aws.String(sourceID)}}}, errTestCase.expectedError)
 	got := checkLauncherUpdate(mockServiceClient, errTestCase.expectedInput)
 	assert.IsType(t, errTestCase.expectedOutput, got)
 	assert.Equal(t, errTestCase.expectedOutput, got)
 }
 
 func TestStart(t *testing.T) {
-	projectName := testJobName + "-" + testJobId
+	projectName := testJobName + "-" + testJobID
 	projectArn := "arn:aws:codebuild:project//" + projectName
 
 	testConfigWithLauncherUpdate := make(map[string]interface{})
@@ -269,7 +269,7 @@ func TestStart(t *testing.T) {
 	for _, testCase := range testCases {
 		launcherVersion := testCase.expectedInput["launcherVersion"].(string)
 		createRequest, batchBuildSpec := getRequestObject(projectName, launcherVersion, testCase.launcherUpdate, testCase.expectedInput)
-		sourceId := "sdinit-" + testLauncherVersion
+		sourceID := "sdinit-" + testLauncherVersion
 		var names []*string
 		names = append(names, aws.String(projectName))
 		envVars := getEnvVars(testCase.expectedInput)
@@ -281,13 +281,13 @@ func TestStart(t *testing.T) {
 		buildBatchInput := getStartBuildBatchInput(envVars, projectName, testConfigWithLauncherUpdate, batchBuildSpec)
 
 		mockServiceClient, mockCBAPI, mockS3API := setup()
-		mockS3API.On("ListObjectsV2", &s3.ListObjectsV2Input{Bucket: aws.String(testBucket)}).Return(&s3.ListObjectsV2Output{Contents: []*s3.Object{{Key: aws.String(sourceId)}}}, nil)
+		mockS3API.On("ListObjectsV2", &s3.ListObjectsV2Input{Bucket: aws.String(testBucket)}).Return(&s3.ListObjectsV2Output{Contents: []*s3.Object{{Key: aws.String(sourceID)}}}, nil)
 		mockCBAPI.On("BatchGetProjects", &codebuild.BatchGetProjectsInput{Names: names}).Return(&codebuild.BatchGetProjectsOutput{}, testCase.batchGetError)
 		mockCBAPI.On("CreateProject", createRequest).Return(&codebuild.CreateProjectOutput{Project: &codebuild.Project{Arn: aws.String(projectArn)}}, testCase.createProjectError)
 		mockCBAPI.On("StartBuild", startBuildRequest).Return(&codebuild.StartBuildOutput{}, testCase.startBuildError)
 		mockCBAPI.On("StartBuildBatch", buildBatchInput).Return(&codebuild.StartBuildBatchOutput{}, testCase.startBuildBatchError)
 
-		executor := &awsServerless{
+		executor := &AwsServerless{
 			serviceClient: mockServiceClient,
 		}
 
@@ -301,7 +301,7 @@ func TestStart(t *testing.T) {
 }
 
 func TestStartWhenProjectExists(t *testing.T) {
-	projectName := testJobName + "-" + testJobId
+	projectName := testJobName + "-" + testJobID
 	projectArn := "arn:aws:codebuild:project//" + projectName
 
 	testConfigWithLauncherUpdate := make(map[string]interface{})
@@ -388,7 +388,7 @@ func TestStartWhenProjectExists(t *testing.T) {
 		launcherVersion := testCase.expectedInput["launcherVersion"].(string)
 		_request, batchBuildSpec := getRequestObject(projectName, launcherVersion, testCase.launcherUpdate, testCase.expectedInput)
 		updateRequest := codebuild.UpdateProjectInput(*_request)
-		sourceId := "sdinit-" + testLauncherVersion
+		sourceID := "sdinit-" + testLauncherVersion
 		var names []*string
 		names = append(names, aws.String(projectName))
 		envVars := getEnvVars(testCase.expectedInput)
@@ -400,13 +400,13 @@ func TestStartWhenProjectExists(t *testing.T) {
 		buildBatchInput := getStartBuildBatchInput(envVars, projectName, testConfigWithLauncherUpdate, batchBuildSpec)
 
 		mockServiceClient, mockCBAPI, mockS3API := setup()
-		mockS3API.On("ListObjectsV2", &s3.ListObjectsV2Input{Bucket: aws.String(testBucket)}).Return(&s3.ListObjectsV2Output{Contents: []*s3.Object{{Key: aws.String(sourceId)}}}, nil)
+		mockS3API.On("ListObjectsV2", &s3.ListObjectsV2Input{Bucket: aws.String(testBucket)}).Return(&s3.ListObjectsV2Output{Contents: []*s3.Object{{Key: aws.String(sourceID)}}}, nil)
 		mockCBAPI.On("BatchGetProjects", &codebuild.BatchGetProjectsInput{Names: names}).Return(&codebuild.BatchGetProjectsOutput{Projects: []*codebuild.Project{{Name: aws.String(projectName)}}}, testCase.batchGetError)
 		mockCBAPI.On("UpdateProject", &updateRequest).Return(&codebuild.UpdateProjectOutput{Project: &codebuild.Project{Arn: aws.String(projectArn)}}, testCase.updateProjectError)
 		mockCBAPI.On("StartBuild", startBuildRequest).Return(&codebuild.StartBuildOutput{}, testCase.startBuildError)
 		mockCBAPI.On("StartBuildBatch", buildBatchInput).Return(&codebuild.StartBuildBatchOutput{}, testCase.startBuildBatchError)
 
-		executor := &awsServerless{
+		executor := &AwsServerless{
 			serviceClient: mockServiceClient,
 		}
 
@@ -420,7 +420,7 @@ func TestStartWhenProjectExists(t *testing.T) {
 }
 
 func TestStop(t *testing.T) {
-	projectName := testJobName + "-" + testJobId
+	projectName := testJobName + "-" + testJobID
 	stopConfig := make(map[string]interface{})
 	for key, value := range testConfig {
 		stopConfig[key] = value
@@ -451,7 +451,7 @@ func TestStop(t *testing.T) {
 		mockServiceClient, mockCBAPI, _ := setup()
 		mockCBAPI.On("DeleteProject", &codebuild.DeleteProjectInput{Name: aws.String(projectName)}).Return(&codebuild.DeleteProjectOutput{}, testCase.deleteProjectError)
 
-		executor := &awsServerless{
+		executor := &AwsServerless{
 			serviceClient: mockServiceClient,
 		}
 		err := executor.Stop(testCase.expectedInput)

@@ -25,7 +25,7 @@ import (
 )
 
 const (
-	EXECUTOR = "eks"
+	executorName = "eks"
 )
 
 // eks client definition struct
@@ -38,31 +38,31 @@ type k8sClientset struct {
 	client kubernetes.Interface
 }
 
-// aws eks executor definition struct
-type awsExecutorEKS struct {
+// AwsExecutorEKS definition struct
+type AwsExecutorEKS struct {
 	name         string
 	eksClient    *eksClient
 	k8sClientset *k8sClientset
 }
 
 // describes an eks cluster
-func (c *eksClient) describeCluster(cluster_name string) (*eks.DescribeClusterOutput, error) {
-	if cluster_name == "" {
+func (c *eksClient) describeCluster(clusterName string) (*eks.DescribeClusterOutput, error) {
+	if clusterName == "" {
 		return nil, errors.New("cluster name is empty")
 	}
-	cluster_info, err := c.service.DescribeCluster(&eks.DescribeClusterInput{
-		Name: aws.String(cluster_name),
+	clusterInfo, err := c.service.DescribeCluster(&eks.DescribeClusterInput{
+		Name: aws.String(clusterName),
 	})
 	if err != nil {
 		log.Printf("DescribeCluster error - %s", err)
 		return nil, err
 	}
-	if cluster_info == nil {
+	if clusterInfo == nil {
 		log.Printf("cluster does not exist")
 		return nil, errors.New("cluster does not exist")
 	}
 
-	return cluster_info, err
+	return clusterInfo, err
 }
 
 // newAWSService returns a new instance of eks
@@ -81,13 +81,13 @@ func newEKSService(region string) *eksClient {
 }
 
 // gets the token for creating clientset
-func (e *awsExecutorEKS) getToken(cluster_name *string) (string, error) {
+func (e *AwsExecutorEKS) getToken(clusterName *string) (string, error) {
 	gen, err := token.NewGenerator(true, false)
 	if err != nil {
 		return "", err
 	}
 	opts := &token.GetTokenOptions{
-		ClusterID: aws.StringValue(cluster_name),
+		ClusterID: aws.StringValue(clusterName),
 	}
 	tok, err := gen.GetWithOptions(opts)
 	if err != nil {
@@ -97,22 +97,22 @@ func (e *awsExecutorEKS) getToken(cluster_name *string) (string, error) {
 }
 
 // Returns a new client set for kubernetes
-func (e *awsExecutorEKS) newClientSet(config map[string]interface{}) (*k8sClientset, error) {
+func (e *AwsExecutorEKS) newClientSet(config map[string]interface{}) (*k8sClientset, error) {
 	if e.k8sClientset != nil {
 		return e.k8sClientset, nil
 	}
 	//connect to cluster
-	cluster_info, err := e.eksClient.describeCluster(config["clusterName"].(string))
+	clusterInfo, err := e.eksClient.describeCluster(config["clusterName"].(string))
 	if err != nil {
 		return nil, fmt.Errorf("Error calling DescribeCluster:%v", err)
 	}
-	certificate := cluster_info.Cluster.CertificateAuthority.Data
-	endpoint := cluster_info.Cluster.Endpoint
-	arn := cluster_info.Cluster.Arn
+	certificate := clusterInfo.Cluster.CertificateAuthority.Data
+	endpoint := clusterInfo.Cluster.Endpoint
+	arn := clusterInfo.Cluster.Arn
 	log.Printf("Cluster Arn: %v", string(*arn))
 
 	//get token
-	token, err := e.getToken(cluster_info.Cluster.Name)
+	token, err := e.getToken(clusterInfo.Cluster.Name)
 	ca, err := base64.StdEncoding.DecodeString(aws.StringValue(certificate))
 	if err != nil {
 		return nil, err
@@ -138,15 +138,15 @@ func (e *awsExecutorEKS) newClientSet(config map[string]interface{}) (*k8sClient
 
 // gets the pod object for creating pod
 func getPodObject(config map[string]interface{}, namespace string) *core.Pod {
-	buildIdStr := strconv.Itoa(config["buildId"].(int))
-	buildIdWithPrefix := config["prefix"].(string) + "-" + buildIdStr
-	podName := buildIdWithPrefix + "-" + rand.String(5)
+	buildIDStr := strconv.Itoa(config["buildId"].(int))
+	buildIDWithPrefix := config["prefix"].(string) + "-" + buildIDStr
+	podName := buildIDWithPrefix + "-" + rand.String(5)
 
 	return &core.Pod{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      podName,
 			Namespace: namespace,
-			Labels:    map[string]string{"app": "screwdriver", "tier": "builds", "sdbuild": buildIdWithPrefix},
+			Labels:    map[string]string{"app": "screwdriver", "tier": "builds", "sdbuild": buildIDWithPrefix},
 		},
 		Spec: core.PodSpec{
 			ServiceAccountName:            config["serviceAccountName"].(string),
@@ -156,7 +156,7 @@ func getPodObject(config map[string]interface{}, namespace string) *core.Pod {
 			DNSPolicy:                     core.DNSClusterFirst,
 			Containers: []core.Container{
 				{
-					Name:            buildIdWithPrefix,
+					Name:            buildIDWithPrefix,
 					Image:           config["container"].(string),
 					ImagePullPolicy: core.PullAlways,
 					Ports: []core.ContainerPort{
@@ -194,7 +194,7 @@ func getPodObject(config map[string]interface{}, namespace string) *core.Pod {
 							config["apiUri"].(string),
 							config["storeUri"].(string),
 							config["buildTimeout"].(string),
-							buildIdStr,
+							buildIDStr,
 							config["uiUri"].(string),
 						),
 					},
@@ -208,7 +208,7 @@ func getPodObject(config map[string]interface{}, namespace string) *core.Pod {
 			},
 			InitContainers: []core.Container{
 				{
-					Name:    "launcher-" + buildIdWithPrefix,
+					Name:    "launcher-" + buildIDWithPrefix,
 					Image:   config["launcherImage"].(string),
 					Command: []string{"/bin/sh", "-c", "echo launcher_start_ts:`date +%s` > /workspace/metrics && if ! [ -f /opt/launcher/launch ]; then TEMP_DIR=`mktemp -d -p /opt/launcher` && cp -a /opt/sd/* $TEMP_DIR && mkdir -p $TEMP_DIR/hab && cp -a /hab/* $TEMP_DIR/hab && mv $TEMP_DIR/* /opt/launcher && rm -rf $TEMP_DIR || true; else ls /opt/launcher; fi; echo launcher_end_ts:`date +%s` >> /workspace/metrics"},
 					VolumeMounts: []core.VolumeMount{
@@ -219,7 +219,7 @@ func getPodObject(config map[string]interface{}, namespace string) *core.Pod {
 			},
 			Volumes: []core.Volume{
 				{Name: "screwdriver", VolumeSource: core.VolumeSource{HostPath: &core.HostPathVolumeSource{Path: "/opt/screwdriver/sdlauncher/" + config["launcherVersion"].(string)}}}, //Type: &core.HostPathType("DirectoryOrCreate")
-				{Name: "sdtemp", VolumeSource: core.VolumeSource{HostPath: &core.HostPathVolumeSource{Path: "/opt/screwdriver/tmp_" + buildIdStr}}},
+				{Name: "sdtemp", VolumeSource: core.VolumeSource{HostPath: &core.HostPathVolumeSource{Path: "/opt/screwdriver/tmp_" + buildIDStr}}},
 				{Name: "workspace", VolumeSource: core.VolumeSource{EmptyDir: &core.EmptyDirVolumeSource{}}},
 				{Name: "podinfo", VolumeSource: core.VolumeSource{DownwardAPI: &core.DownwardAPIVolumeSource{Items: []core.DownwardAPIVolumeFile{
 					{Path: "labels", FieldRef: &core.ObjectFieldSelector{FieldPath: "metadata.labels"}},
@@ -231,13 +231,13 @@ func getPodObject(config map[string]interface{}, namespace string) *core.Pod {
 }
 
 // Start a kubernetes pod in eks cluster
-func (e *awsExecutorEKS) Start(config map[string]interface{}) (string, error) {
+func (e *AwsExecutorEKS) Start(config map[string]interface{}) (string, error) {
 	clientset, _ := e.newClientSet(config)
 	namespace := config["namespace"].(string)
 	podsClient := clientset.client.CoreV1().Pods(namespace)
 	log.Printf("Namespace: %v, PodClient: +%v", namespace, &podsClient)
 
-	// build the pod defination we want to deploy
+	// build the pod definition we want to deploy
 	pod := getPodObject(config, namespace)
 	log.Printf("Pod spec %+v", pod.Spec)
 	// create pod in eks cluster
@@ -259,38 +259,38 @@ func (e *awsExecutorEKS) Start(config map[string]interface{}) (string, error) {
 	return nodeName, nil
 }
 
-// Stops a kubernetes pod in eks cluster
-func (e *awsExecutorEKS) Stop(config map[string]interface{}) error {
+// Stop fn deletes a kubernetes pod in eks cluster
+func (e *AwsExecutorEKS) Stop(config map[string]interface{}) error {
 	clientset, _ := e.newClientSet(config)
 	namespace := config["namespace"].(string)
-	buildIdStr := strconv.Itoa(config["buildId"].(int))
-	buildIdWithPrefix := config["prefix"].(string) + "-" + buildIdStr
+	buildIDStr := strconv.Itoa(config["buildId"].(int))
+	buildIDWithPrefix := config["prefix"].(string) + "-" + buildIDStr
 
 	podsClient := clientset.client.CoreV1().Pods(namespace)
-	listPods, err := podsClient.List(context.TODO(), metav1.ListOptions{LabelSelector: fmt.Sprintf("sdbuild=%v", buildIdWithPrefix)})
+	listPods, err := podsClient.List(context.TODO(), metav1.ListOptions{LabelSelector: fmt.Sprintf("sdbuild=%v", buildIDWithPrefix)})
 
 	if err != nil {
-		return fmt.Errorf("Failed to get pods %v.\n", err)
+		return fmt.Errorf("failed to get pods %v", err)
 	}
 	//delete pod in eks cluster
 	for _, i := range listPods.Items {
-		log.Printf("Deleting pod...%s.\n", i.Name)
+		log.Printf("Deleting pod...%s", i.Name)
 		result := podsClient.Delete(context.TODO(), i.Name, metav1.DeleteOptions{})
-		log.Printf("Deleted pod %s.\n", result)
+		log.Printf("Deleted pod %s", result)
 	}
 
 	return nil
 }
 
-//Returns the name of executor
-func (e *awsExecutorEKS) Name() string {
+//Name fn returns the name of executor
+func (e *AwsExecutorEKS) Name() string {
 	return e.name
 }
 
-// Returns a new instance of EKS executor
-func New() *awsExecutorEKS {
-	return &awsExecutorEKS{
+// New fn returns a new instance of EKS executor
+func New() *AwsExecutorEKS {
+	return &AwsExecutorEKS{
 		eksClient: newEKSService(os.Getenv("AWS_REGION")),
-		name:      EXECUTOR,
+		name:      executorName,
 	}
 }

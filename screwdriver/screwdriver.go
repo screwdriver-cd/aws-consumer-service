@@ -23,11 +23,13 @@ const retryWaitMax = 300
 var maxRetries = 5
 var httpTimeout = time.Duration(20) * time.Second
 
+// API interface definition
 type API interface {
 	UpdateBuild(stats map[string]interface{}, buildID int, statusMessage string) error
 	GetAPIURL() (string, error)
 }
 
+// BuildUpdatePayload structure definition
 type BuildUpdatePayload struct {
 	Stats         map[string]interface{} `json:"stats"`
 	StatusMessage string                 `json:"statusMessage,omitempty"`
@@ -37,18 +39,22 @@ type BuildUpdatePayload struct {
 type Token struct {
 	Token string `json:"token"`
 }
+
+// SDError structure definition
 type SDError struct {
 	StatusCode int    `json:"statusCode"`
 	Reason     string `json:"error"`
 	Message    string `json:"message"`
 }
 
+// SDAPI structure definition
 type SDAPI struct {
 	baseURL string
 	token   string
 	client  *retryablehttp.Client
 }
 
+// Error fn to format error
 func (e SDError) Error() string {
 	return fmt.Sprintf("%d %s: %s", e.StatusCode, e.Reason, e.Message)
 }
@@ -143,11 +149,13 @@ func (a SDAPI) put(url *url.URL, bodyType string, payload io.Reader) ([]byte, er
 	return a.write(url, "PUT", bodyType, payload)
 }
 
+// GetAPIURL function create a url for calling SD API
 func (a SDAPI) GetAPIURL() (string, error) {
 	url, err := a.makeURL("")
 	return url.String(), err
 }
 
+// UpdateBuild function calls sd api to update build
 func (a SDAPI) UpdateBuild(stats map[string]interface{}, buildID int, statusMessage string) error {
 	u, err := a.makeURL(fmt.Sprintf("builds/%d", buildID))
 	if err != nil {

@@ -22,7 +22,7 @@ const (
 	testMaxRetries   = 4
 	testRetryWaitMin = 10
 	testRetryWaitMax = 10
-	testHttpTimeout  = 10
+	testHTTPTimeout  = 10
 )
 
 func makeFakeHTTPClient(t *testing.T, code int, body string) *http.Client {
@@ -72,7 +72,7 @@ func makeValidatedFakeHTTPClient(t *testing.T, code int, body string, v func(r *
 	return &http.Client{Transport: transport}
 }
 
-func makeRetryableHttpClient(maxRetries, retryWaitMin, retryWaitMax, httpTimeout int) *retryablehttp.Client {
+func makeRetryableHTTPClient(maxRetries, retryWaitMin, retryWaitMax, httpTimeout int) *retryablehttp.Client {
 	client := retryablehttp.NewClient()
 	client.RetryMax = maxRetries
 	client.RetryWaitMin = time.Duration(retryWaitMin) * time.Millisecond
@@ -119,7 +119,7 @@ func TestUpdateBuild(t *testing.T) {
 
 	for _, test := range tests {
 		var client *retryablehttp.Client
-		client = makeRetryableHttpClient(testMaxRetries, testRetryWaitMin, testRetryWaitMax, testHttpTimeout)
+		client = makeRetryableHTTPClient(testMaxRetries, testRetryWaitMin, testRetryWaitMax, testHTTPTimeout)
 		client.HTTPClient = makeFakeHTTPClient(t, test.statusCode, "{}")
 		testAPI := SDAPI{"http://fakeurl", "faketoken", client}
 		// func(r *http.Request) {
@@ -140,7 +140,7 @@ func TestUpdateBuild(t *testing.T) {
 
 func TestGetAPIURL(t *testing.T) {
 	var client *retryablehttp.Client
-	client = makeRetryableHttpClient(testMaxRetries, testRetryWaitMin, testRetryWaitMax, testHttpTimeout)
+	client = makeRetryableHTTPClient(testMaxRetries, testRetryWaitMin, testRetryWaitMax, testHTTPTimeout)
 	client.HTTPClient = makeValidatedFakeHTTPClient(t, 200, "{}", func(r *http.Request) {
 		buf := new(bytes.Buffer)
 		buf.ReadFrom(r.Body)

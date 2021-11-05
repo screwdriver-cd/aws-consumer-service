@@ -20,15 +20,15 @@ type awsAPI struct {
 	s3 s3iface.S3API
 }
 
-// serverless definition struct
-type awsServerless struct {
+// AwsServerless definition struct
+type AwsServerless struct {
 	serviceClient *awsAPI
 	name          string
 }
 
 const (
-	EXECUTOR = "sls"
-	SDINIT   = "sdinit-"
+	executorName = "sls"
+	sdInitPrefix = "sdinit-"
 )
 
 // checks if launcher update is required
@@ -44,7 +44,7 @@ func checkLauncherUpdate(serviceClient *awsAPI, launcherVersion string) bool {
 		return launcherUpdate
 	}
 
-	sourceIdentifier := SDINIT + launcherVersion
+	sourceIdentifier := sdInitPrefix + launcherVersion
 	// check if launcher version already exists
 	if len(listResult.Contents) > 0 {
 		for _, obj := range listResult.Contents {
@@ -224,7 +224,7 @@ func getStartBuildBatchInput(envVars []*codebuild.EnvironmentVariable, project s
 // gets the requests object for create project
 func getRequestObject(project string, launcherVersion string, launcherUpdate bool, config map[string]interface{}) (*codebuild.CreateProjectInput, string) {
 	batchBuildSpec, singleBuildSpec := getBuildSpec(config)
-	sourceIdentifier := SDINIT + launcherVersion
+	sourceIdentifier := sdInitPrefix + launcherVersion
 
 	var securityGroupIds []*string
 	for _, sg := range config["securityGroupIds"].([]string) {
@@ -313,8 +313,8 @@ func getEnvVars(config map[string]interface{}) []*codebuild.EnvironmentVariable 
 	}
 }
 
-// Create a codebuild project and Start a build
-func (e *awsServerless) Start(config map[string]interface{}) (string, error) {
+// Start function of executor creates a codebuild project and starts a build
+func (e *AwsServerless) Start(config map[string]interface{}) (string, error) {
 	launcherVersion := config["launcherVersion"].(string)
 	launcherUpdate := checkLauncherUpdate(e.serviceClient, launcherVersion)
 
@@ -375,7 +375,7 @@ func (e *awsServerless) Start(config map[string]interface{}) (string, error) {
 }
 
 // Stop a build and delete build project
-func (e *awsServerless) Stop(config map[string]interface{}) (err error) {
+func (e *AwsServerless) Stop(config map[string]interface{}) (err error) {
 	project := config["jobName"].(string) + "-" + config["jobId"].(string)
 
 	if config["prune"].(bool) {
@@ -383,18 +383,17 @@ func (e *awsServerless) Stop(config map[string]interface{}) (err error) {
 	}
 	if checkLauncherUpdate(e.serviceClient, config["launcherVersion"].(string)) {
 		return stopBuildBatch(e.serviceClient, project)
-	} else {
-		return stopBuild(e.serviceClient, project)
 	}
+	return stopBuild(e.serviceClient, project)
 }
 
 // Name returns the name of executor
-func (e *awsServerless) Name() string {
+func (e *AwsServerless) Name() string {
 	return e.name
 }
 
 // New returns a new instance of executor and service client
-func New() *awsServerless {
+func New() *AwsServerless {
 	sess, _ := session.NewSession(&aws.Config{
 		Region: aws.String(os.Getenv("AWS_REGION"))},
 	)
@@ -404,8 +403,8 @@ func New() *awsServerless {
 		cb: codebuild.New(sess),
 	}
 
-	return &awsServerless{
-		name:          EXECUTOR,
+	return &AwsServerless{
+		name:          executorName,
 		serviceClient: svcClient,
 	}
 }
