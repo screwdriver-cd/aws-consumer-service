@@ -1,0 +1,34 @@
+shared:
+    image: golang:1.17.2
+    environment:
+        GOPATH: /sd/workspace
+
+jobs:
+    main:
+        environment:
+            SD_SONAR_OPTS: "-Dsonar.sources=./ -Dsonar.exclusions=**/*_test.go,**/vendor/** -Dsonar.tests=./ -Dsonar.test.inclusions=**/*_test.go -Dsonar.test.exclusions=**/vendor/** -Dsonar.go.coverage.reportPaths=${SD_ARTIFACTS_DIR}/coverage.out -Dsonar.go.tests.reportPaths=${SD_ARTIFACTS_DIR}/report.json"
+        requires: [~pr, ~commit]
+        steps:
+            - gover: go version
+            - install: go mod download
+            - vet: go vet ./...
+            - tidy: go mod tidy
+            - gofmt: (! gofmt -d -s . | grep '^')
+            - test: make test JSONFILE=${SD_ARTIFACTS_DIR}/report.json COVERPROFILE=${SD_ARTIFACTS_DIR}/coverage.out
+            - build: go build -a -o /dev/null
+            - getreleaser: curl -sfL https://install.goreleaser.com/github.com/goreleaser/goreleaser.sh | sh
+            - test-release: ./bin/goreleaser release --snapshot
+
+    publish:
+        requires: [main]
+        steps:
+            - setup-ci: git clone https://github.com/screwdriver-cd/toolbox.git ci
+            - get: go mod download
+            - tag: ./ci/git-tag.sh
+            - getreleaser: curl -sfL https://install.goreleaser.com/github.com/goreleaser/goreleaser.sh | sh
+            - release: ./bin/goreleaser release
+        secrets:
+            # Pushing tags to Git
+            - GIT_KEY
+            # Pushing releases to GitHub
+            - GITHUB_TOKEN
