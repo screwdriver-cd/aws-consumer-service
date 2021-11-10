@@ -122,14 +122,6 @@ func TestUpdateBuild(t *testing.T) {
 		client = makeRetryableHTTPClient(testMaxRetries, testRetryWaitMin, testRetryWaitMax, testHTTPTimeout)
 		client.HTTPClient = makeFakeHTTPClient(t, test.statusCode, "{}")
 		testAPI := SDAPI{"http://fakeurl", "faketoken", client}
-		// func(r *http.Request) {
-		// 	buf := new(bytes.Buffer)
-		// 	buf.ReadFrom(r.Body)
-		// 	want := regexp.MustCompile(`{"imagePullStartTime":"[\d-]+T[\d:.Z-]+","hostname":"node123"}`)
-		// 	if !want.MatchString(buf.String()) {
-		// 		t.Errorf("buf.String() = %q", buf.String())
-		// 	}
-		// }
 		err := testAPI.UpdateBuild(test.stats, 15, test.statusMessage)
 
 		if !reflect.DeepEqual(err, test.err) {

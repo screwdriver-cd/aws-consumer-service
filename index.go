@@ -144,7 +144,6 @@ func finalRecover() {
 		fmt.Fprintln(os.Stderr, "ERROR: Something terrible has happened. Please file a ticket with this info:")
 		fmt.Fprintf(os.Stderr, "ERROR: %v\n%v\n", p, debug.Stack())
 	}
-	// os.Exit(0)
 }
 
 // HandleRequest is a go lambda request handler with event type map[string][]KafkaRecord
