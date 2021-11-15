@@ -309,7 +309,8 @@ func getEnvVars(config map[string]interface{}) []*codebuild.EnvironmentVariable 
 		{Name: aws.String("UI"), Value: aws.String(config["uiUri"].(string))},
 		{Name: aws.String("TIMEOUT"), Value: aws.String(strconv.Itoa(config["buildTimeout"].(int)))},
 		{Name: aws.String("SDBUILDID"), Value: aws.String(strconv.Itoa(config["buildId"].(int)))},
-		{Name: aws.String("SD_NO_HAB"), Value: aws.String(strconv.FormatBool(true))},
+		{Name: aws.String("SD_HAB_ENABLED"), Value: aws.String("yes")},
+		{Name: aws.String("SD_AWS_INTEGRATION"), Value: aws.String("yes")},
 	}
 }
 
