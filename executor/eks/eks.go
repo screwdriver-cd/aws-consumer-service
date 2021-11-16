@@ -185,7 +185,7 @@ func getPodObject(config map[string]interface{}, namespace string) *core.Pod {
 						{Name: "SD_BASE_COMMAND_PATH", Value: "/sd/commands/"},
 						{Name: "SD_TEMP", Value: "/opt/sd_tmp"},
 						{Name: "DOCKER_HOST", Value: "tcp"},
-						{Name: "SD_HAB_ENABLED", Value: "yes"},
+						{Name: "SD_HAB_ENABLED", Value: "true"},
 					},
 					Command: []string{"/opt/sd/launcher_entrypoint.sh"},
 					Args: []string{
