@@ -16,8 +16,7 @@ jobs:
             - gofmt: (! gofmt -d -s . | grep '^')
             - test: make test JSONFILE=${SD_ARTIFACTS_DIR}/report.json COVERPROFILE=${SD_ARTIFACTS_DIR}/coverage.out
             - build: go build -a -o /dev/null
-            - getreleaser: curl -sfL https://install.goreleaser.com/github.com/goreleaser/goreleaser.sh | sh
-            - test-release: ./bin/goreleaser release --snapshot
+            - test-release: "curl -sL https://git.io/goreleaser | bash -s -- --snapshot"
 
     publish:
         requires: [main]
@@ -25,8 +24,7 @@ jobs:
             - setup-ci: git clone https://github.com/screwdriver-cd/toolbox.git ci
             - get: go mod download
             - tag: ./ci/git-tag.sh
-            - getreleaser: curl -sfL https://install.goreleaser.com/github.com/goreleaser/goreleaser.sh | sh
-            - release: ./bin/goreleaser release
+            - release: "curl -sL https://git.io/goreleaser | bash"
         secrets:
             # Pushing tags to Git
             - GIT_KEY_BASE64
