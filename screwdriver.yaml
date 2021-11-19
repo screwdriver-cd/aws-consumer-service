@@ -2,7 +2,6 @@ shared:
     image: golang:1.17.2
     environment:
         GOPATH: /sd/workspace
-        GO111MODULE: on
 
 jobs:
     main:
@@ -17,7 +16,8 @@ jobs:
             - gofmt: (! gofmt -d -s . | grep '^')
             - test: make test JSONFILE=${SD_ARTIFACTS_DIR}/report.json COVERPROFILE=${SD_ARTIFACTS_DIR}/coverage.out
             - build: go build -a -o /dev/null
-            - test-release: "curl -sL https://git.io/goreleaser | bash -s -- --snapshot"
+            - getreleaser: go install github.com/goreleaser/goreleaser@latest
+            - test-release: goreleaser release --snapshot
 
     publish:
         requires: [main]
@@ -25,7 +25,8 @@ jobs:
             - setup-ci: git clone https://github.com/screwdriver-cd/toolbox.git ci
             - get: go mod download
             - tag: ./ci/git-tag.sh
-            - release: "curl -sL https://git.io/goreleaser | bash"
+            - getreleaser: go install github.com/goreleaser/goreleaser@latest
+            - release: goreleaser release
         secrets:
             # Pushing tags to Git
             - GIT_KEY_BASE64
