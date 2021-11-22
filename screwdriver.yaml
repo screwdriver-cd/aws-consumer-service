@@ -24,6 +24,8 @@ jobs:
             - setup-ci: git clone https://github.com/screwdriver-cd/toolbox.git $SD_ROOT_DIR/ci
             - get: go mod download
             - tag: $SD_ROOT_DIR/ci/git-tag.sh
+            - clean: |
+                [ -e VERSION ] && rm VERSION
             - release: "curl -sL https://git.io/goreleaser | bash"
         secrets:
             # Pushing tags to Git
