@@ -21,9 +21,9 @@ jobs:
     publish:
         requires: [main]
         steps:
-            - setup-ci: git clone https://github.com/screwdriver-cd/toolbox.git ci
+            - setup-ci: git clone https://github.com/screwdriver-cd/toolbox.git $SD_ROOT_DIR/ci
             - get: go mod download
-            - tag: ./ci/git-tag.sh
+            - tag: $SD_ROOT_DIR/ci/git-tag.sh
             - release: "curl -sL https://git.io/goreleaser | bash"
         secrets:
             # Pushing tags to Git
