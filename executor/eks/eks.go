@@ -268,7 +268,7 @@ func (e *AwsExecutorEKS) Stop(config map[string]interface{}) error {
 	clientset, _ := e.newClientSet(config)
 	provider := config["provider"].(map[string]interface{})
 	namespace := provider["namespace"].(string)
-	buildID, _ := config["buildID"].(json.Number).Int64()
+	buildID, _ := config["buildId"].(json.Number).Int64()
 	buildIDStr := fmt.Sprint(buildID)
 	log.Print(namespace)
 
