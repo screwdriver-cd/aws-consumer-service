@@ -10,6 +10,7 @@ import (
 	"os"
 	"path/filepath"
 	"runtime/debug"
+	"strings"
 	"sync"
 	"time"
 	"unsafe"
@@ -81,24 +82,42 @@ var ProcessMessage = func(id int, value string, wg *sync.WaitGroup, ctx context.
 	buildMesage := &BuildMessage{
 		BuildConfig: map[string]interface{}{
 			//default values
-			"container":                "aws/codebuild/standard:5.0",
-			"isPR":                     false,
-			"privilegedMode":           false,
-			"imagePullCredentialsType": "SERVICE_ROLE",
-			"environmentType":          "LINUX_CONTAINER",
-			"computeType":              "BUILD_GENERAL1_SMALL",
-			"queuedTimeout":            "5",
-			"launcherComputeType":      "BUILD_GENERAL1_SMALL",
-			"logsEnabled":              false,
-			"prune":                    false,
-			"serviceAccountName":       "default",
+			"container":          "aws/codebuild/standard:5.0",
+			"serviceAccountName": "default",
 		},
 	}
-	json.Unmarshal([]byte(message), buildMesage)
+	providerDefaults := map[string]interface{}{
+		"executorLogs":             false,
+		"dlc":                      false,
+		"privilegedMode":           false,
+		"prune":                    true,
+		"imagePullCredentialsType": "SERVICE_ROLE",
+		"environmentType":          "LINUX_CONTAINER",
+		"computeType":              "BUILD_GENERAL1_SMALL",
+		"queuedTimeout":            5,
+		"launcherComputeType":      "BUILD_GENERAL1_SMALL",
+	}
+
+	decoder := json.NewDecoder(strings.NewReader(message))
+	decoder.UseNumber()
+	if err := decoder.Decode(&buildMesage); err != nil {
+		log.Fatal(err)
+	}
+
 	buildConfig := buildMesage.BuildConfig
+	provider := buildConfig["provider"].(map[string]interface{})
+
+	for k, v := range providerDefaults {
+		if provider[k] == nil {
+			provider[k] = v
+		}
+	}
+	buildConfig["provider"] = provider
+
 	job := buildMesage.Job
 	executorType := buildMesage.ExecutorType
-	log.Printf("Job Type: %v, Executor: %v, Build Config: %+v", job, executorType, buildConfig)
+
+	log.Printf("Job Type: %v, Executor: %v, Build Config: %#v", job, executorType, buildConfig)
 
 	if executorType != "" && job != "" {
 		var hostname string
@@ -114,7 +133,7 @@ var ProcessMessage = func(id int, value string, wg *sync.WaitGroup, ctx context.
 		} else {
 			log.Printf("%v build successful", job)
 		}
-		buildID := buildConfig["buildId"].(float64)
+		buildID, _ := buildConfig["buildId"].(json.Number).Int64()
 		api, _ := api(buildConfig["apiUri"].(string), buildConfig["token"].(string))
 		UpdateBuildStats(hostname, int(buildID), api)
 	}

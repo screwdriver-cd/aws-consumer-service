@@ -3,11 +3,11 @@ package eks
 import (
 	"context"
 	"encoding/base64"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"log"
 	"os"
-	"strconv"
 
 	"github.com/aws/aws-sdk-go/aws"
 	"github.com/aws/aws-sdk-go/aws/session"
@@ -137,15 +137,18 @@ func (e *AwsExecutorEKS) newClientSet(config map[string]interface{}) (*k8sClient
 
 // gets the pod object for creating pod
 func getPodObject(config map[string]interface{}, namespace string) *core.Pod {
-	buildIDStr := strconv.Itoa(config["buildId"].(int))
-	buildIDWithPrefix := config["prefix"].(string) + "-" + buildIDStr
-	podName := buildIDWithPrefix + "-" + rand.String(5)
+	provider := config["provider"].(map[string]interface{})
+	buildId, _ := config["buildId"].(json.Number).Int64()
+	buildIDStr := fmt.Sprint(buildId)
+	podName := buildIDStr + "-" + rand.String(5)
+	pipelineId, _ := config["pipelineId"].(json.Number).Int64()
+	buildTimeout, _ := config["buildTimeout"].(json.Number).Int64()
 
 	return &core.Pod{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      podName,
 			Namespace: namespace,
-			Labels:    map[string]string{"app": "screwdriver", "tier": "builds", "sdbuild": buildIDWithPrefix},
+			Labels:    map[string]string{"app": "screwdriver", "tier": "builds", "sdbuild": buildIDStr},
 		},
 		Spec: core.PodSpec{
 			ServiceAccountName:            config["serviceAccountName"].(string),
@@ -155,7 +158,7 @@ func getPodObject(config map[string]interface{}, namespace string) *core.Pod {
 			DNSPolicy:                     core.DNSClusterFirst,
 			Containers: []core.Container{
 				{
-					Name:            buildIDWithPrefix,
+					Name:            buildIDStr,
 					Image:           config["container"].(string),
 					ImagePullPolicy: core.PullAlways,
 					Ports: []core.ContainerPort{
@@ -166,12 +169,12 @@ func getPodObject(config map[string]interface{}, namespace string) *core.Pod {
 						},
 					},
 					SecurityContext: &core.SecurityContext{
-						Privileged: &[]bool{config["privilegedMode"].(bool)}[0],
+						Privileged: &[]bool{provider["privilegedMode"].(bool)}[0],
 					},
 					Resources: core.ResourceRequirements{
 						Limits: map[core.ResourceName]resource.Quantity{
-							core.ResourceCPU:    resource.MustParse(config["cpuLimit"].(string)),
-							core.ResourceMemory: resource.MustParse(config["memoryLimit"].(string)),
+							core.ResourceCPU:    resource.MustParse(provider["cpuLimit"].(string)),
+							core.ResourceMemory: resource.MustParse(provider["memoryLimit"].(string)),
 						},
 					},
 					Env: []core.EnvVar{
@@ -179,8 +182,8 @@ func getPodObject(config map[string]interface{}, namespace string) *core.Pod {
 						{Name: "SD_PUSHGATEWAY_URL", Value: ""},
 						{Name: "SD_TERMINATION_GRACE_PERIOD_SECONDS", Value: "60"}, //string(core.DefaultTerminationGracePeriodSeconds)
 						{Name: "CONTAINER_IMAGE", Value: config["container"].(string)},
-						{Name: "SD_PIPELINE_ID", Value: config["pipelineId"].(string)},
-						{Name: "SD_BUILD_PREFIX", Value: config["prefix"].(string)},
+						{Name: "SD_PIPELINE_ID", Value: fmt.Sprint(pipelineId)},
+						{Name: "SD_BUILD_PREFIX", Value: ""},
 						{Name: "NODE_ID", ValueFrom: &core.EnvVarSource{FieldRef: &core.ObjectFieldSelector{FieldPath: "spec.nodeName"}}},
 						{Name: "SD_BASE_COMMAND_PATH", Value: "/sd/commands/"},
 						{Name: "SD_TEMP", Value: "/opt/sd_tmp"},
@@ -193,7 +196,7 @@ func getPodObject(config map[string]interface{}, namespace string) *core.Pod {
 							config["token"].(string),
 							config["apiUri"].(string),
 							config["storeUri"].(string),
-							config["buildTimeout"].(string),
+							fmt.Sprint(buildTimeout),
 							buildIDStr,
 							config["uiUri"].(string),
 						),
@@ -208,8 +211,8 @@ func getPodObject(config map[string]interface{}, namespace string) *core.Pod {
 			},
 			InitContainers: []core.Container{
 				{
-					Name:    "launcher-" + buildIDWithPrefix,
-					Image:   config["launcherImage"].(string),
+					Name:    "launcher-" + buildIDStr,
+					Image:   provider["launcherImage"].(string),
 					Command: []string{"/bin/sh", "-c", "echo launcher_start_ts:`date +%s` > /workspace/metrics && if ! [ -f /opt/launcher/launch ]; then TEMP_DIR=`mktemp -d -p /opt/launcher` && cp -a /opt/sd/* $TEMP_DIR && mkdir -p $TEMP_DIR/hab && cp -a /hab/* $TEMP_DIR/hab && mv $TEMP_DIR/* /opt/launcher && rm -rf $TEMP_DIR || true; else ls /opt/launcher; fi; echo launcher_end_ts:`date +%s` >> /workspace/metrics"},
 					VolumeMounts: []core.VolumeMount{
 						{MountPath: "/opt/launcher", Name: "screwdriver"},
@@ -218,7 +221,7 @@ func getPodObject(config map[string]interface{}, namespace string) *core.Pod {
 				},
 			},
 			Volumes: []core.Volume{
-				{Name: "screwdriver", VolumeSource: core.VolumeSource{HostPath: &core.HostPathVolumeSource{Path: "/opt/screwdriver/sdlauncher/" + config["launcherVersion"].(string)}}}, //Type: &core.HostPathType("DirectoryOrCreate")
+				{Name: "screwdriver", VolumeSource: core.VolumeSource{HostPath: &core.HostPathVolumeSource{Path: "/opt/screwdriver/sdlauncher/" + provider["launcherVersion"].(string)}}}, //Type: &core.HostPathType("DirectoryOrCreate")
 				{Name: "sdtemp", VolumeSource: core.VolumeSource{HostPath: &core.HostPathVolumeSource{Path: "/opt/screwdriver/tmp_" + buildIDStr}}},
 				{Name: "workspace", VolumeSource: core.VolumeSource{EmptyDir: &core.EmptyDirVolumeSource{}}},
 				{Name: "podinfo", VolumeSource: core.VolumeSource{DownwardAPI: &core.DownwardAPIVolumeSource{Items: []core.DownwardAPIVolumeFile{
@@ -233,7 +236,8 @@ func getPodObject(config map[string]interface{}, namespace string) *core.Pod {
 // Start a kubernetes pod in eks cluster
 func (e *AwsExecutorEKS) Start(config map[string]interface{}) (string, error) {
 	clientset, _ := e.newClientSet(config)
-	namespace := config["namespace"].(string)
+	provider := config["provider"].(map[string]interface{})
+	namespace := provider["namespace"].(string)
 	podsClient := clientset.client.CoreV1().Pods(namespace)
 	log.Printf("Namespace: %v, PodClient: +%v", namespace, &podsClient)
 
@@ -262,12 +266,14 @@ func (e *AwsExecutorEKS) Start(config map[string]interface{}) (string, error) {
 // Stop fn deletes a kubernetes pod in eks cluster
 func (e *AwsExecutorEKS) Stop(config map[string]interface{}) error {
 	clientset, _ := e.newClientSet(config)
-	namespace := config["namespace"].(string)
-	buildIDStr := strconv.Itoa(config["buildId"].(int))
-	buildIDWithPrefix := config["prefix"].(string) + "-" + buildIDStr
+	provider := config["provider"].(map[string]interface{})
+	namespace := provider["namespace"].(string)
+	buildId, _ := config["buildId"].(json.Number).Int64()
+	buildIDStr := fmt.Sprint(buildId)
+	log.Print(namespace)
 
 	podsClient := clientset.client.CoreV1().Pods(namespace)
-	listPods, err := podsClient.List(context.TODO(), metav1.ListOptions{LabelSelector: fmt.Sprintf("sdbuild=%v", buildIDWithPrefix)})
+	listPods, err := podsClient.List(context.TODO(), metav1.ListOptions{LabelSelector: fmt.Sprintf("sdbuild=%v", buildIDStr)})
 
 	if err != nil {
 		return fmt.Errorf("failed to get pods %v", err)

@@ -2,8 +2,11 @@ package eks
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
+	"log"
+	"strings"
 	"testing"
 
 	"github.com/aws/aws-sdk-go/aws"
@@ -22,28 +25,57 @@ var (
 	clusterIDDoesNotExist    = "Lorem Ipsum is simply dummy text"
 	expectedClusterOutputArn = "arn:" + clusterName
 	testNamespace            = "sd-builds"
-	testPrefix               = "beta"
-	testBuildID              = 1234
-	testConfig               = map[string]interface{}{
-		"clusterName":        clusterName,
-		"namespace":          testNamespace,
-		"prefix":             testPrefix,
-		"buildId":            testBuildID,
-		"serviceAccountName": "default",
-		"container":          "node:12",
-		"privilegedMode":     false,
-		"cpuLimit":           "2Gi",
-		"memoryLimit":        "2Gi",
-		"launcherImage":      "launcher:v101",
-		"launcherVersion":    "v101",
-		"pipelineId":         "12345",
-		"token":              "abc",
-		"storeUri":           "store.uri",
-		"apiUri":             "api.uri",
-		"uiUri":              "ui.uri",
-		"buildTimeout":       "20",
-	}
 )
+
+func getTestConfig() map[string]interface{} {
+	configObj := `{
+		"jobName": "deploy",
+		"jobId": 123,
+		"namespace": "sd-builds",
+		"buildId": 1234,
+		"container": "node:12",
+		"privilegedMode": false,
+		"pipelineId": 12345,
+		"token": "abc",
+		"storeUri": "store.uri",
+		"apiUri": "api.uri",
+		"uiUri": "ui.uri",
+		"buildTimeout": 20,
+		"isPR": false,
+		"serviceAccountName" : "default",
+		"provider": {
+			"vpc": {
+				"vpcId": "vpc-12345",
+				"securityGroupIds": [
+					"sg-123"
+				],
+				"subnetIds": [
+					"subnet-1111",
+					"subnet-2222",
+					"subnet-3333"
+				]
+			},
+			"clusterName": "test-cluster-1",
+			"namespace": "sd-builds",
+			"cpuLimit": "2Gi",
+			"memoryLimit": "2Gi",
+			"launcherImage": "launcher:v101",
+			"launcherVersion": "v101",
+			"queuedTimeout": 5,
+			"privilegedMode": false,
+			"executorLogs": false
+		}
+	}`
+
+	decoder := json.NewDecoder(strings.NewReader(configObj))
+	decoder.UseNumber()
+	var testConfig map[string]interface{}
+	if err := decoder.Decode(&testConfig); err != nil {
+		log.Fatal(err)
+	}
+
+	return testConfig
+}
 
 var (
 	validCluster        = clusterName
@@ -212,6 +244,7 @@ func TestK8sClientSet(t *testing.T) {
 }
 
 func TestStart(t *testing.T) {
+	testConfig := getTestConfig()
 	kubeclient := fake.NewSimpleClientset(&core.Pod{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      "example-pod-1",
@@ -237,11 +270,10 @@ func TestStart(t *testing.T) {
 			client: kubeclient,
 		},
 	}
-	errorConfig := make(map[string]interface{})
-	for key, value := range testConfig {
-		errorConfig[key] = value
-	}
-	errorConfig["namespace"] = "default"
+	errorConfig := getTestConfig()
+	provider := errorConfig["provider"].(map[string]interface{})
+	provider["namespace"] = "default"
+	errorConfig["provider"] = provider
 
 	tests := []struct {
 		request          map[string]interface{}
@@ -263,7 +295,7 @@ func TestStart(t *testing.T) {
 		},
 	}
 	coreClient := executor.k8sClientset.client.CoreV1()
-	buildIDWithPrefix := testPrefix + "-" + "1234"
+	buildId := "1234"
 	for _, test := range tests {
 		got, err := executor.Start(test.request)
 		assert.IsType(t, test.expectedNode, got)
@@ -272,28 +304,26 @@ func TestStart(t *testing.T) {
 		for _, node := range list.Items {
 			assert.Equal(t, test.expectedNode, node.Name)
 		}
-		//test.request["namespace"].(string)
 		pods, err := coreClient.Pods(testNamespace).List(context.TODO(),
-			metav1.ListOptions{LabelSelector: fmt.Sprintf("sdbuild=%v", buildIDWithPrefix)})
+			metav1.ListOptions{LabelSelector: fmt.Sprintf("sdbuild=%v", buildId)})
 		assert.Equal(t, test.expectedPodCount, len(pods.Items))
 	}
 }
 
 func TestStop(t *testing.T) {
-	buildIDWithPrefix := testPrefix + "-" + "1234"
-	podName := buildIDWithPrefix + "-erbf3"
+	testConfig := getTestConfig()
+	podName := "1234-erbf3"
 	kubeclient := fake.NewSimpleClientset(&core.Pod{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      podName,
 			Namespace: testNamespace,
-			Labels:    map[string]string{"app": "screwdriver", "tier": "builds", "sdbuild": buildIDWithPrefix},
+			Labels:    map[string]string{"app": "screwdriver", "tier": "builds", "sdbuild": "1234"},
 		},
 	})
-	errorConfig := make(map[string]interface{})
-	for key, value := range testConfig {
-		errorConfig[key] = value
-	}
-	errorConfig["namespace"] = "default"
+	errorConfig := getTestConfig()
+	provider := errorConfig["provider"].(map[string]interface{})
+	provider["namespace"] = "default"
+	errorConfig["provider"] = provider
 
 	executor := &AwsExecutorEKS{
 		k8sClientset: &k8sClientset{

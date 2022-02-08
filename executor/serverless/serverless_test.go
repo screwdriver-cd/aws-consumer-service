@@ -1,8 +1,11 @@
 package sls
 
 import (
+	"encoding/json"
 	"errors"
+	"log"
 	"os"
+	"strings"
 	"testing"
 
 	"github.com/aws/aws-sdk-go/aws"
@@ -18,45 +21,64 @@ var (
 	testNamespace       = "sd-builds"
 	testJobName         = "deploy"
 	testJobID           = "123"
-	testPrefix          = "beta"
 	testBuildID         = 1234
 	testBucket          = "test-bucket-123"
 	testLauncherVersion = "v101"
 	testLauncherUpdate  = false
-	testConfig          = map[string]interface{}{
-		"jobName":                  "deploy",
-		"jobId":                    testJobID,
-		"namespace":                testNamespace,
-		"prefix":                   testPrefix,
-		"buildId":                  testBuildID,
-		"container":                "node:12",
-		"privilegedMode":           false,
-		"cpuLimit":                 "2Gi",
-		"memoryLimit":              "2Gi",
-		"launcherImage":            "launcher:v101",
-		"launcherVersion":          "v101",
-		"pipelineId":               "12345",
-		"token":                    "abc",
-		"storeUri":                 "store.uri",
-		"apiUri":                   "api.uri",
-		"uiUri":                    "ui.uri",
-		"buildTimeout":             20,
-		"roleArn":                  "role:123",
-		"vpcId":                    "vpc-12345",
-		"securityGroupIds":         []string{"sg-123"},
-		"subnets":                  []string{"subnet-1111", "subnet-2222", "subnet-3333"},
-		"isPR":                     false,
-		"imagePullCredentialsType": "SERVICE_ROLE",
-		"environmentType":          "LINUX_CONTAINER",
-		"computeType":              "BUILD_GENERAL1_SMALL",
-		"queuedTimeout":            5,
-		"launcherComputeType":      "BUILD_GENERAL1_SMALL",
-		"logsEnabled":              false,
-		"prune":                    false,
-		"serviceAccountName":       "default",
-		"dlc":                      false,
-	}
 )
+
+func getTestConfig() map[string]interface{} {
+	configObj := `{
+		"jobName": "deploy",
+		"jobId": 123,
+		"namespace": "sd-builds",
+		"buildId": 1234,
+		"container": "node:12",
+		"privilegedMode": false,
+		"pipelineId": "12345",
+		"token": "abc",
+		"storeUri": "store.uri",
+		"apiUri": "api.uri",
+		"uiUri": "ui.uri",
+		"buildTimeout": 20,
+		"isPR": false,
+		"provider": {
+			"role": "role:123",
+			"vpc": {
+				"vpcId": "vpc-12345",
+				"securityGroupIds": [
+					"sg-123"
+				],
+				"subnetIds": [
+					"subnet-1111",
+					"subnet-2222",
+					"subnet-3333"
+				]
+			},
+			"imagePullCredentialsType": "SERVICE_ROLE",
+			"environmentType": "LINUX_CONTAINER",
+			"computeType": "BUILD_GENERAL1_SMALL",
+			"launcherComputeType": "BUILD_GENERAL1_SMALL",
+			"logsEnabled": false,
+			"prune": false,
+			"dlc": false,
+			"launcherImage": "launcher:v101",
+			"launcherVersion": "v101",
+			"queuedTimeout": 5,
+			"privilegedMode": false,
+			"executorLogs": false
+		}
+	}`
+
+	decoder := json.NewDecoder(strings.NewReader(configObj))
+	decoder.UseNumber()
+	var testConfig map[string]interface{}
+	if err := decoder.Decode(&testConfig); err != nil {
+		log.Fatal(err)
+	}
+
+	return testConfig
+}
 
 type mockCodeBuildClient struct {
 	codebuildiface.CodeBuildAPI
@@ -184,13 +206,12 @@ func TestCheckLauncherUpdateWithFailure(t *testing.T) {
 func TestStart(t *testing.T) {
 	projectName := testJobName + "-" + testJobID
 	projectArn := "arn:aws:codebuild:project//" + projectName
-
-	testConfigWithLauncherUpdate := make(map[string]interface{})
-	for key, value := range testConfig {
-		testConfigWithLauncherUpdate[key] = value
-	}
-	testConfigWithLauncherUpdate["launcherImage"] = "launcher:v102"
-	testConfigWithLauncherUpdate["launcherVersion"] = "v102"
+	testConfig := getTestConfig()
+	testConfigWithLauncherUpdate := getTestConfig()
+	provider := testConfigWithLauncherUpdate["provider"].(map[string]interface{})
+	provider["launcherImage"] = "launcher:v102"
+	provider["launcherVersion"] = "v102"
+	testConfigWithLauncherUpdate["provider"] = provider
 
 	//create project
 	testCases := []struct {
@@ -267,7 +288,8 @@ func TestStart(t *testing.T) {
 	defer os.Unsetenv("SD_SLS_BUILD_BUCKET")
 
 	for _, testCase := range testCases {
-		launcherVersion := testCase.expectedInput["launcherVersion"].(string)
+		provider := testCase.expectedInput["provider"].(map[string]interface{})
+		launcherVersion := provider["launcherVersion"].(string)
 		createRequest, batchBuildSpec := getRequestObject(projectName, launcherVersion, testCase.launcherUpdate, testCase.expectedInput)
 		sourceID := "sdinit-" + testLauncherVersion
 		var names []*string
@@ -276,7 +298,7 @@ func TestStart(t *testing.T) {
 		startBuildRequest := &codebuild.StartBuildInput{
 			EnvironmentVariablesOverride: envVars,
 			ProjectName:                  aws.String(projectName),
-			ServiceRoleOverride:          aws.String(testCase.expectedInput["roleArn"].(string)),
+			ServiceRoleOverride:          aws.String(provider["role"].(string)),
 		}
 		buildBatchInput := getStartBuildBatchInput(envVars, projectName, testConfigWithLauncherUpdate, batchBuildSpec)
 
@@ -303,13 +325,12 @@ func TestStart(t *testing.T) {
 func TestStartWhenProjectExists(t *testing.T) {
 	projectName := testJobName + "-" + testJobID
 	projectArn := "arn:aws:codebuild:project//" + projectName
-
-	testConfigWithLauncherUpdate := make(map[string]interface{})
-	for key, value := range testConfig {
-		testConfigWithLauncherUpdate[key] = value
-	}
-	testConfigWithLauncherUpdate["launcherImage"] = "launcher:v102"
-	testConfigWithLauncherUpdate["launcherVersion"] = "v102"
+	testConfig := getTestConfig()
+	testConfigWithLauncherUpdate := getTestConfig()
+	provider := testConfigWithLauncherUpdate["provider"].(map[string]interface{})
+	provider["launcherImage"] = "launcher:v102"
+	provider["launcherVersion"] = "v102"
+	testConfigWithLauncherUpdate["provider"] = provider
 
 	//update project
 	testCases := []struct {
@@ -385,7 +406,8 @@ func TestStartWhenProjectExists(t *testing.T) {
 	defer os.Unsetenv("SD_SLS_BUILD_BUCKET")
 
 	for _, testCase := range testCases {
-		launcherVersion := testCase.expectedInput["launcherVersion"].(string)
+		provider := testCase.expectedInput["provider"].(map[string]interface{})
+		launcherVersion := provider["launcherVersion"].(string)
 		_request, batchBuildSpec := getRequestObject(projectName, launcherVersion, testCase.launcherUpdate, testCase.expectedInput)
 		updateRequest := codebuild.UpdateProjectInput(*_request)
 		sourceID := "sdinit-" + testLauncherVersion
@@ -395,7 +417,7 @@ func TestStartWhenProjectExists(t *testing.T) {
 		startBuildRequest := &codebuild.StartBuildInput{
 			EnvironmentVariablesOverride: envVars,
 			ProjectName:                  aws.String(projectName),
-			ServiceRoleOverride:          aws.String(testCase.expectedInput["roleArn"].(string)),
+			ServiceRoleOverride:          aws.String(provider["role"].(string)),
 		}
 		buildBatchInput := getStartBuildBatchInput(envVars, projectName, testConfigWithLauncherUpdate, batchBuildSpec)
 
@@ -421,11 +443,10 @@ func TestStartWhenProjectExists(t *testing.T) {
 
 func TestStop(t *testing.T) {
 	projectName := testJobName + "-" + testJobID
-	stopConfig := make(map[string]interface{})
-	for key, value := range testConfig {
-		stopConfig[key] = value
-	}
-	stopConfig["prune"] = true
+	stopConfig := getTestConfig()
+	provider := stopConfig["provider"].(map[string]interface{})
+	provider["prune"] = true
+	stopConfig["provider"] = provider
 
 	testCases := []struct {
 		message            string
