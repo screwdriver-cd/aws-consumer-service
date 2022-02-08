@@ -295,7 +295,7 @@ func TestStart(t *testing.T) {
 		},
 	}
 	coreClient := executor.k8sClientset.client.CoreV1()
-	buildId := "1234"
+	buildID := "1234"
 	for _, test := range tests {
 		got, err := executor.Start(test.request)
 		assert.IsType(t, test.expectedNode, got)
@@ -305,7 +305,7 @@ func TestStart(t *testing.T) {
 			assert.Equal(t, test.expectedNode, node.Name)
 		}
 		pods, err := coreClient.Pods(testNamespace).List(context.TODO(),
-			metav1.ListOptions{LabelSelector: fmt.Sprintf("sdbuild=%v", buildId)})
+			metav1.ListOptions{LabelSelector: fmt.Sprintf("sdbuild=%v", buildID)})
 		assert.Equal(t, test.expectedPodCount, len(pods.Items))
 	}
 }

@@ -138,10 +138,10 @@ func (e *AwsExecutorEKS) newClientSet(config map[string]interface{}) (*k8sClient
 // gets the pod object for creating pod
 func getPodObject(config map[string]interface{}, namespace string) *core.Pod {
 	provider := config["provider"].(map[string]interface{})
-	buildId, _ := config["buildId"].(json.Number).Int64()
-	buildIDStr := fmt.Sprint(buildId)
+	buildID, _ := config["buildId"].(json.Number).Int64()
+	buildIDStr := fmt.Sprint(buildID)
 	podName := buildIDStr + "-" + rand.String(5)
-	pipelineId, _ := config["pipelineId"].(json.Number).Int64()
+	pipelineID, _ := config["pipelineId"].(json.Number).Int64()
 	buildTimeout, _ := config["buildTimeout"].(json.Number).Int64()
 
 	return &core.Pod{
@@ -182,7 +182,7 @@ func getPodObject(config map[string]interface{}, namespace string) *core.Pod {
 						{Name: "SD_PUSHGATEWAY_URL", Value: ""},
 						{Name: "SD_TERMINATION_GRACE_PERIOD_SECONDS", Value: "60"}, //string(core.DefaultTerminationGracePeriodSeconds)
 						{Name: "CONTAINER_IMAGE", Value: config["container"].(string)},
-						{Name: "SD_PIPELINE_ID", Value: fmt.Sprint(pipelineId)},
+						{Name: "SD_PIPELINE_ID", Value: fmt.Sprint(pipelineID)},
 						{Name: "SD_BUILD_PREFIX", Value: ""},
 						{Name: "NODE_ID", ValueFrom: &core.EnvVarSource{FieldRef: &core.ObjectFieldSelector{FieldPath: "spec.nodeName"}}},
 						{Name: "SD_BASE_COMMAND_PATH", Value: "/sd/commands/"},
@@ -268,8 +268,8 @@ func (e *AwsExecutorEKS) Stop(config map[string]interface{}) error {
 	clientset, _ := e.newClientSet(config)
 	provider := config["provider"].(map[string]interface{})
 	namespace := provider["namespace"].(string)
-	buildId, _ := config["buildId"].(json.Number).Int64()
-	buildIDStr := fmt.Sprint(buildId)
+	buildID, _ := config["buildID"].(json.Number).Int64()
+	buildIDStr := fmt.Sprint(buildID)
 	log.Print(namespace)
 
 	podsClient := clientset.client.CoreV1().Pods(namespace)

@@ -286,14 +286,14 @@ func getRequestObject(project string, launcherVersion string, launcherUpdate boo
 // gets the environment variables object
 func getEnvVars(config map[string]interface{}) []*codebuild.EnvironmentVariable {
 	buildTimeout, _ := config["buildTimeout"].(json.Number).Int64()
-	buildId, _ := config["buildId"].(json.Number).Int64()
+	buildID, _ := config["buildId"].(json.Number).Int64()
 	return []*codebuild.EnvironmentVariable{
 		{Name: aws.String("TOKEN"), Value: aws.String(config["token"].(string))},
 		{Name: aws.String("API"), Value: aws.String(config["apiUri"].(string))},
 		{Name: aws.String("STORE"), Value: aws.String(config["storeUri"].(string))},
 		{Name: aws.String("UI"), Value: aws.String(config["uiUri"].(string))},
 		{Name: aws.String("TIMEOUT"), Value: aws.String(fmt.Sprint(buildTimeout))},
-		{Name: aws.String("SDBUILDID"), Value: aws.String(fmt.Sprint(buildId))},
+		{Name: aws.String("SDBUILDID"), Value: aws.String(fmt.Sprint(buildID))},
 		{Name: aws.String("SD_HAB_ENABLED"), Value: aws.String(strconv.FormatBool(false))},
 		{Name: aws.String("SD_AWS_INTEGRATION"), Value: aws.String(strconv.FormatBool(true))},
 	}
@@ -305,8 +305,8 @@ func getProjectName(config map[string]interface{}) string {
 	if config["isPR"].(bool) {
 		jobName = strings.Replace(jobName, ":", "-", 1)
 	}
-	jobId, _ := config["jobId"].(json.Number).Int64()
-	projectName := jobName + "-" + fmt.Sprint(jobId)
+	jobID, _ := config["jobId"].(json.Number).Int64()
+	projectName := jobName + "-" + fmt.Sprint(jobID)
 
 	log.Printf("Project name: %v", projectName)
 
