@@ -86,7 +86,16 @@ var ProcessMessage = func(id int, value string, wg *sync.WaitGroup, ctx context.
 			"serviceAccountName": "default",
 		},
 	}
-	providerDefaults := map[string]interface{}{
+
+	decoder := json.NewDecoder(strings.NewReader(message))
+	decoder.UseNumber()
+	if err := decoder.Decode(&buildMesage); err != nil {
+		log.Fatal(err)
+	}
+	buildConfig := buildMesage.BuildConfig
+	provider := buildConfig["provider"].(map[string]interface{})
+
+	messageProviderDefaults := `{
 		"executorLogs":             false,
 		"dlc":                      false,
 		"privilegedMode":           false,
@@ -95,17 +104,15 @@ var ProcessMessage = func(id int, value string, wg *sync.WaitGroup, ctx context.
 		"environmentType":          "LINUX_CONTAINER",
 		"computeType":              "BUILD_GENERAL1_SMALL",
 		"queuedTimeout":            5,
-		"launcherComputeType":      "BUILD_GENERAL1_SMALL",
-	}
+		"launcherComputeType":      "BUILD_GENERAL1_SMALL"
+	}`
 
-	decoder := json.NewDecoder(strings.NewReader(message))
-	decoder.UseNumber()
-	if err := decoder.Decode(&buildMesage); err != nil {
+	var providerDefaults map[string]interface{}
+	pDecoder := json.NewDecoder(strings.NewReader(messageProviderDefaults))
+	pDecoder.UseNumber()
+	if err := pDecoder.Decode(&providerDefaults); err != nil {
 		log.Fatal(err)
 	}
-
-	buildConfig := buildMesage.BuildConfig
-	provider := buildConfig["provider"].(map[string]interface{})
 
 	for k, v := range providerDefaults {
 		if provider[k] == nil {
