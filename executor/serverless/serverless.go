@@ -33,7 +33,8 @@ const (
 	sdInitPrefix = "sdinit-"
 )
 
-var AwsRegionMap = map[string]string{
+// awsRegionMap for region short names
+var awsRegionMap = map[string]string{
 	"north":     "n",
 	"west":      "w",
 	"northeast": "nw",
@@ -46,7 +47,7 @@ var AwsRegionMap = map[string]string{
 // gets the region short name
 func getRegionShortName(region string) string {
 	items := strings.Split(region, "-")
-	shortRegion := strings.Join([]string{items[0], AwsRegionMap[items[1]], items[2]}, "")
+	shortRegion := strings.Join([]string{items[0], awsRegionMap[items[1]], items[2]}, "")
 	return shortRegion
 }
 
