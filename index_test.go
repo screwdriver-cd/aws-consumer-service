@@ -50,12 +50,12 @@ func (e *mockSlsExecutor) Stop(config map[string]interface{}) error {
 	stopSlsFn = "stopsls"
 	return nil
 }
-func newSls() *mockSlsExecutor {
+func newSls(region string) *mockSlsExecutor {
 	return &mockSlsExecutor{
 		name: "sls",
 	}
 }
-func newEks() *mockEksExecutor {
+func newEks(region string) *mockEksExecutor {
 	return &mockEksExecutor{
 		name: "eks",
 	}
@@ -101,8 +101,12 @@ func newSdAPI(apiURI string, token string) (sd.API, error) {
 	return sd.API(MockAPI{}), nil
 }
 
+func mockExecutorsList(region string) []IExecutor {
+	return []IExecutor{newSls(region), newEks(region)}
+}
+
 func TestHandleRequest(t *testing.T) {
-	executorsList = []IExecutor{newSls(), newEks()}
+	executorsList = mockExecutorsList
 	api = newSdAPI
 	tests := []struct {
 		request events.KafkaEvent
@@ -142,23 +146,24 @@ func TestHandleRequest(t *testing.T) {
 }
 
 func TestGetExecutor(t *testing.T) {
-	executorsList = []IExecutor{newSls(), newEks()}
+	executorsList = mockExecutorsList
 	tests := []struct {
 		name   string
+		region string
 		expect interface{}
 		err    error
 	}{
-		{name: "eks", expect: &mockEksExecutor{}, err: nil},
-		{name: "sls", expect: &mockSlsExecutor{}, err: nil},
+		{name: "eks", region: "us-east-2", expect: &mockEksExecutor{}, err: nil},
+		{name: "sls", region: "us-east-2", expect: &mockSlsExecutor{}, err: nil},
 	}
 	for _, test := range tests {
-		response := GetExecutor(test.name)
+		response := GetExecutor(test.name, test.region)
 		assert.IsType(t, test.expect, response)
 	}
 }
 
 func TestEksStartMessage(t *testing.T) {
-	executorsList = []IExecutor{newSls(), newEks()}
+	executorsList = mockExecutorsList
 	api = newSdAPI
 
 	var wg sync.WaitGroup
@@ -183,7 +188,7 @@ func TestEksStartMessage(t *testing.T) {
 	}
 }
 func TestEksStopMessage(t *testing.T) {
-	executorsList = []IExecutor{newSls(), newEks()}
+	executorsList = mockExecutorsList
 	api = newSdAPI
 
 	var wg sync.WaitGroup
@@ -208,7 +213,7 @@ func TestEksStopMessage(t *testing.T) {
 	}
 }
 func TestSlsStopMessage(t *testing.T) {
-	executorsList = []IExecutor{newSls(), newEks()}
+	executorsList = mockExecutorsList
 	api = newSdAPI
 
 	var wg sync.WaitGroup
@@ -233,7 +238,7 @@ func TestSlsStopMessage(t *testing.T) {
 	}
 }
 func TestSlsStartMessage(t *testing.T) {
-	executorsList = []IExecutor{newSls(), newEks()}
+	executorsList = mockExecutorsList
 	api = newSdAPI
 
 	var wg sync.WaitGroup

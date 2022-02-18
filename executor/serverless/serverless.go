@@ -33,9 +33,36 @@ const (
 	sdInitPrefix = "sdinit-"
 )
 
-// checks if launcher update is required
-func checkLauncherUpdate(serviceClient *awsAPI, launcherVersion string) bool {
+var AwsRegionMap = map[string]string{
+	"north":     "n",
+	"west":      "w",
+	"northeast": "nw",
+	"east":      "e",
+	"south":     "s",
+	"central":   "c",
+	"southeast": "se",
+}
+
+// gets the region short name
+func getRegionShortName(region string) string {
+	items := strings.Split(region, "-")
+	shortRegion := strings.Join([]string{items[0], AwsRegionMap[items[1]], items[2]}, "")
+	return shortRegion
+}
+
+// gets the bucket name in case of cross region deployments
+func getBucketName(region string, buildRegion string) string {
 	bucket := os.Getenv("SD_SLS_BUILD_BUCKET")
+	if buildRegion == "" || region == buildRegion {
+		return bucket
+	}
+	bucketName := strings.Replace(bucket, getRegionShortName(region), getRegionShortName(buildRegion), 1)
+
+	return bucketName
+}
+
+// checks if launcher update is required
+func checkLauncherUpdate(serviceClient *awsAPI, launcherVersion string, bucket string) bool {
 	var launcherUpdate bool = true
 
 	listResult, err := serviceClient.s3.ListObjectsV2(&s3.ListObjectsV2Input{
@@ -151,6 +178,10 @@ func startBuild(project string, envVars []*codebuild.EnvironmentVariable, provid
 			},
 		}
 	}
+	if provider["debugSession"].(bool) {
+		buildInput.DebugSessionEnabled = aws.Bool(true)
+	}
+
 	_, err := serviceClient.cb.StartBuild(buildInput)
 	return err
 }
@@ -175,7 +206,7 @@ func getStartBuildBatchInput(envVars []*codebuild.EnvironmentVariable, project s
 		ServiceRoleOverride:          aws.String(provider["role"].(string)),
 		ArtifactsOverride: &codebuild.ProjectArtifacts{
 			EncryptionDisabled:   aws.Bool(false),
-			Location:             aws.String(os.Getenv("SD_SLS_BUILD_BUCKET")),
+			Location:             aws.String(config["bucket"].(string)),
 			OverrideArtifactName: aws.Bool(false),
 			Packaging:            aws.String("ZIP"),
 			Type:                 aws.String("S3"),
@@ -197,6 +228,10 @@ func getStartBuildBatchInput(envVars []*codebuild.EnvironmentVariable, project s
 			},
 		}
 	}
+	if provider["debugSession"].(bool) {
+		buildBatchInput.DebugSessionEnabled = aws.Bool(true)
+	}
+
 	return buildBatchInput
 }
 
@@ -222,6 +257,12 @@ func getRequestObject(project string, launcherVersion string, launcherUpdate boo
 	queuedTimeout, _ := provider["queuedTimeout"].(json.Number).Int64()
 	buildTimeout, _ := config["buildTimeout"].(json.Number).Int64()
 
+	// set image pull credential type
+	if strings.HasPrefix(config["container"].(string), "aws/codebuild/") {
+		imagePullCredentialsType := "CODEBUILD"
+		provider["imagePullCredentialsType"] = imagePullCredentialsType
+	}
+
 	createRequest := &codebuild.CreateProjectInput{
 		Artifacts: &codebuild.ProjectArtifacts{
 			Type: aws.String("NO_ARTIFACTS"),
@@ -229,7 +270,7 @@ func getRequestObject(project string, launcherVersion string, launcherUpdate boo
 		Name: aws.String(project),
 		Source: &codebuild.ProjectSource{
 			Buildspec: aws.String(singleBuildSpec),
-			Location:  aws.String(os.Getenv("SD_SLS_BUILD_BUCKET") + "/" + sourceIdentifier),
+			Location:  aws.String(config["bucket"].(string) + "/" + sourceIdentifier),
 			Type:      aws.String("S3"),
 		},
 		QueuedTimeoutInMinutes: aws.Int64(queuedTimeout),
@@ -256,7 +297,7 @@ func getRequestObject(project string, launcherVersion string, launcherUpdate boo
 				Status: aws.String("DISABLED"),
 			},
 		},
-		EncryptionKey: aws.String(os.Getenv("SD_SLS_BUILD_ENCRYPTION_KEY")),
+		EncryptionKey: aws.String(os.Getenv("SD_SLS_BUILD_ENCRYPTION_KEY_ALIAS")),
 	}
 
 	if launcherUpdate {
@@ -318,7 +359,11 @@ func (e *AwsServerless) Start(config map[string]interface{}) (string, error) {
 	provider := config["provider"].(map[string]interface{})
 
 	launcherVersion := provider["launcherVersion"].(string)
-	launcherUpdate := checkLauncherUpdate(e.serviceClient, launcherVersion)
+	bucket := getBucketName(provider["region"].(string), provider["buildRegion"].(string))
+	// set bucket to config
+	config["bucket"] = bucket
+
+	launcherUpdate := checkLauncherUpdate(e.serviceClient, launcherVersion, bucket)
 
 	log.Printf("Launcher Updated: %v", launcherUpdate)
 
@@ -384,8 +429,12 @@ func (e *AwsServerless) Stop(config map[string]interface{}) (err error) {
 	if provider["prune"].(bool) {
 		return deleteProject(e.serviceClient, project)
 	}
-	log.Printf("sv sfv")
-	if checkLauncherUpdate(e.serviceClient, provider["launcherVersion"].(string)) {
+
+	bucket := getBucketName(provider["region"].(string), provider["buildRegion"].(string))
+	// set bucket to config
+	config["bucket"] = bucket
+
+	if checkLauncherUpdate(e.serviceClient, provider["launcherVersion"].(string), bucket) {
 		return stopBuildBatch(e.serviceClient, project)
 	}
 	return stopBuild(e.serviceClient, project)
@@ -397,9 +446,9 @@ func (e *AwsServerless) Name() string {
 }
 
 // New returns a new instance of executor and service client
-func New() *AwsServerless {
+func New(region string) *AwsServerless {
 	sess, _ := session.NewSession(&aws.Config{
-		Region: aws.String(os.Getenv("AWS_REGION"))},
+		Region: aws.String(region)},
 	)
 	// Create CodeBuild & S3 service client
 	svcClient := &awsAPI{
