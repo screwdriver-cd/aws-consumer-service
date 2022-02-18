@@ -37,7 +37,7 @@ const (
 var awsRegionMap = map[string]string{
 	"north":     "n",
 	"west":      "w",
-	"northeast": "nw",
+	"northwest": "nw",
 	"east":      "e",
 	"south":     "s",
 	"central":   "c",
