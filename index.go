@@ -24,7 +24,6 @@ import (
 
 var utcLoc, _ = time.LoadLocation("UTC")
 var api = sd.New
-var executorsList = []IExecutor{eksExecutor.New(), slsExecutor.New()}
 
 // BuildMessage structure definition
 type BuildMessage struct {
@@ -40,10 +39,16 @@ type IExecutor interface {
 	Name() string
 }
 
+// List Executors
+var executorsList = func(region string) []IExecutor {
+	return []IExecutor{eksExecutor.New(region), slsExecutor.New(region)}
+}
+
 // GetExecutor selects the executor based on the executor name
-func GetExecutor(name string) IExecutor {
+func GetExecutor(name string, region string) IExecutor {
 	var currentExecutor IExecutor
-	for _, v := range executorsList {
+	executors := executorsList(region)
+	for _, v := range executors {
 		if v.Name() == name {
 			currentExecutor = v
 		}
@@ -104,7 +109,9 @@ var ProcessMessage = func(id int, value string, wg *sync.WaitGroup, ctx context.
 		"environmentType":          "LINUX_CONTAINER",
 		"computeType":              "BUILD_GENERAL1_SMALL",
 		"queuedTimeout":            5,
-		"launcherComputeType":      "BUILD_GENERAL1_SMALL"
+		"launcherComputeType":      "BUILD_GENERAL1_SMALL",
+		"buildRegion" : 			"",
+		"debugSession" : 			false
 	}`
 
 	var providerDefaults map[string]interface{}
@@ -126,9 +133,14 @@ var ProcessMessage = func(id int, value string, wg *sync.WaitGroup, ctx context.
 
 	log.Printf("Job Type: %v, Executor: %v, Build Config: %#v", job, executorType, buildConfig)
 
+	buildRegion := provider["buildRegion"].(string)
+	if buildRegion == "" {
+		buildRegion = provider["region"].(string)
+	}
+
 	if executorType != "" && job != "" {
 		var hostname string
-		executor := GetExecutor(executorType)
+		executor := GetExecutor(executorType, buildRegion)
 		switch string(job) {
 		case "start":
 			hostname, err = executor.Start(buildConfig)

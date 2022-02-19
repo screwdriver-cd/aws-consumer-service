@@ -22,7 +22,7 @@ var (
 	testJobName         = "deploy"
 	testJobID           = "123"
 	testBuildID         = 1234
-	testBucket          = "test-bucket-123"
+	testBucket          = "test-bucket-123-usw2"
 	testLauncherVersion = "v101"
 	testLauncherUpdate  = false
 )
@@ -44,6 +44,8 @@ func getTestConfig() map[string]interface{} {
 		"isPR": false,
 		"provider": {
 			"role": "role:123",
+			"region": "us-west-2",
+			"buildRegion": "us-west-2",
 			"vpc": {
 				"vpcId": "vpc-12345",
 				"securityGroupIds": [
@@ -66,7 +68,8 @@ func getTestConfig() map[string]interface{} {
 			"launcherVersion": "v101",
 			"queuedTimeout": 5,
 			"privilegedMode": false,
-			"executorLogs": false
+			"executorLogs": false,
+			"debugSession": false
 		}
 	}`
 
@@ -76,6 +79,7 @@ func getTestConfig() map[string]interface{} {
 	if err := decoder.Decode(&testConfig); err != nil {
 		log.Fatal(err)
 	}
+	testConfig["bucket"] = testBucket
 
 	return testConfig
 }
@@ -173,7 +177,7 @@ func TestCheckLauncherUpdate(t *testing.T) {
 	}
 	for _, testCase := range testCases {
 		mockS3API.On("ListObjectsV2", &s3.ListObjectsV2Input{Bucket: aws.String(testBucket)}).Return(&s3.ListObjectsV2Output{Contents: []*s3.Object{{Key: aws.String(sourceID)}}}, testCase.expectedError)
-		got := checkLauncherUpdate(mockServiceClient, testCase.expectedInput)
+		got := checkLauncherUpdate(mockServiceClient, testCase.expectedInput, testBucket)
 		assert.IsType(t, testCase.expectedOutput, got)
 		assert.Equal(t, testCase.expectedOutput, got)
 
@@ -198,10 +202,14 @@ func TestCheckLauncherUpdateWithFailure(t *testing.T) {
 		expectedError:  errors.New("Error getting object"),
 	}
 	mockS3API.On("ListObjectsV2", &s3.ListObjectsV2Input{Bucket: aws.String(testBucket)}).Return(&s3.ListObjectsV2Output{Contents: []*s3.Object{{Key: aws.String(sourceID)}}}, errTestCase.expectedError)
-	got := checkLauncherUpdate(mockServiceClient, errTestCase.expectedInput)
+	got := checkLauncherUpdate(mockServiceClient, errTestCase.expectedInput, testBucket)
 	assert.IsType(t, errTestCase.expectedOutput, got)
 	assert.Equal(t, errTestCase.expectedOutput, got)
 }
+
+// func TestGetBucketName(t *testing.T) {
+
+// }
 
 func TestStart(t *testing.T) {
 	projectName := testJobName + "-" + testJobID
@@ -285,7 +293,9 @@ func TestStart(t *testing.T) {
 	}
 
 	os.Setenv("SD_SLS_BUILD_BUCKET", testBucket)
+	os.Setenv("SD_SLS_BUILD_ENCRYPTION_KEY_ALIAS", "alias/testKey")
 	defer os.Unsetenv("SD_SLS_BUILD_BUCKET")
+	defer os.Unsetenv("SD_SLS_BUILD_ENCRYPTION_KEY_ALIAS")
 
 	for _, testCase := range testCases {
 		provider := testCase.expectedInput["provider"].(map[string]interface{})

@@ -7,7 +7,6 @@ import (
 	"errors"
 	"fmt"
 	"log"
-	"os"
 
 	"github.com/aws/aws-sdk-go/aws"
 	"github.com/aws/aws-sdk-go/aws/session"
@@ -294,9 +293,9 @@ func (e *AwsExecutorEKS) Name() string {
 }
 
 // New fn returns a new instance of EKS executor
-func New() *AwsExecutorEKS {
+func New(region string) *AwsExecutorEKS {
 	return &AwsExecutorEKS{
-		eksClient: newEKSService(os.Getenv("AWS_REGION")),
+		eksClient: newEKSService(region),
 		name:      executorName,
 	}
 }
