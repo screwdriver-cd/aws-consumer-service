@@ -72,6 +72,7 @@ func UpdateBuildStats(hostname string, buildID int, api sd.API) {
 
 // ProcessMessage receives messages from the kafka broker endpoint and processes them
 var ProcessMessage = func(id int, value string, wg *sync.WaitGroup, ctx context.Context) error {
+	defer recoverPanic()
 	defer wg.Done()
 
 	log.Printf("Processing id: %v", id)
@@ -190,12 +191,12 @@ func HandleRequest(ctx context.Context, request events.KafkaEvent) (string, erro
 	log.Printf("size of event received %v", eventSize)
 
 	defer finalRecover()
-	defer recoverPanic()
 
-	var count int
+	var totalRecords int
 	for k, record := range request.Records {
 		var wg sync.WaitGroup
-		count = len(record)
+		count := len(record)
+		totalRecords += count
 		log.Printf("Received %v records for key %v", count, k)
 		wg.Add(count)
 		for i := 0; i < count; i++ {
@@ -205,9 +206,9 @@ func HandleRequest(ctx context.Context, request events.KafkaEvent) (string, erro
 		wg.Wait()
 
 	}
-	log.Printf("Finished processing %v records", count)
+	log.Printf("Finished processing %v records", totalRecords)
 
-	return fmt.Sprintf("Finished processing messages: %v", count), nil
+	return fmt.Sprintf("Finished processing messages: %v", totalRecords), nil
 }
 
 // main function for go lambda

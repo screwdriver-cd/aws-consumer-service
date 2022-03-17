@@ -59,6 +59,8 @@ func getBucketName(region string, buildRegion string) string {
 	}
 	bucketName := strings.Replace(bucket, getRegionShortName(region), getRegionShortName(buildRegion), 1)
 
+	log.Printf("Regional Bucket Name: %v", bucketName)
+
 	return bucketName
 }
 
