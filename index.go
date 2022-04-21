@@ -107,6 +107,7 @@ var ProcessMessage = func(id int, value string, wg *sync.WaitGroup, ctx context.
 		"privilegedMode":           false,
 		"prune":                    true,
 		"imagePullCredentialsType": "SERVICE_ROLE",
+		"launcherEnvironmentType":  "LINUX_CONTAINER",
 		"environmentType":          "LINUX_CONTAINER",
 		"computeType":              "BUILD_GENERAL1_SMALL",
 		"queuedTimeout":            5,
