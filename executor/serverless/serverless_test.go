@@ -60,6 +60,7 @@ func getTestConfig() map[string]interface{} {
 			"imagePullCredentialsType": "SERVICE_ROLE",
 			"environmentType": "LINUX_CONTAINER",
 			"computeType": "BUILD_GENERAL1_SMALL",
+			"launcherEnvironmentType": "LINUX_CONTAINER",
 			"launcherComputeType": "BUILD_GENERAL1_SMALL",
 			"logsEnabled": false,
 			"prune": false,

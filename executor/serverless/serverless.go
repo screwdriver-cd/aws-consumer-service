@@ -158,8 +158,8 @@ func stopBuildBatch(serviceClient *awsAPI, project string) error {
 // gets the formatted build spec files for codebuild project
 func getBuildSpec(provider map[string]interface{}) (string, string) {
 	mainBuildspec := fmt.Sprintf("version: 0.2\\nphases:\\n  install:\\n    commands:\\n      - mkdir /opt/sd && cp -r $CODEBUILD_SRC_DIR_sdinit_sdinit/opt/sd/* /opt/sd/\\n  build:\\n    commands:\\n      - /opt/sd/launcher_entrypoint.sh /opt/sd/run.sh $TOKEN $API $STORE $TIMEOUT $SDBUILDID $UI")
-	batchBuildSpec := fmt.Sprintf("version: 0.2\nbatch:\n  fast-fail: false\n  build-graph:\n    - identifier: sdinit\n      env:\n        type: LINUX_CONTAINER\n        image: %v\n        compute-type: %v\n        privileged-mode: false\n      ignore-failure: false\n    - identifier: main\n      buildspec: \"%v\"\n      depend-on:\n        - sdinit\nartifacts:\n  base-directory: /opt\n  files:  \n    - '/opt/**/*'",
-		provider["launcherImage"].(string), provider["launcherComputeType"].(string), mainBuildspec)
+	batchBuildSpec := fmt.Sprintf("version: 0.2\nbatch:\n  fast-fail: false\n  build-graph:\n    - identifier: sdinit\n      env:\n        type: %v\n        image: %v\n        compute-type: %v\n        privileged-mode: false\n      ignore-failure: false\n    - identifier: main\n      buildspec: \"%v\"\n      depend-on:\n        - sdinit\nartifacts:\n  base-directory: /opt\n  files:  \n    - '/opt/**/*'",
+		provider["launcherEnvironmentType"].(string), provider["launcherImage"].(string), provider["launcherComputeType"].(string), mainBuildspec)
 	singleBuildSpec := fmt.Sprintf("version: 0.2\nphases:\n  install:\n    commands:\n       - mkdir /opt/sd && cp -r $CODEBUILD_SRC_DIR/opt/sd/* /opt/sd/\n  build:\n    commands:\n       - /opt/sd/launcher_entrypoint.sh /opt/sd/run.sh $TOKEN $API $STORE $TIMEOUT $SDBUILDID $UI\n")
 
 	return batchBuildSpec, singleBuildSpec
@@ -241,6 +241,10 @@ func getStartBuildBatchInput(envVars []*codebuild.EnvironmentVariable, project s
 // gets the requests object for create project
 func getRequestObject(project string, launcherVersion string, launcherUpdate bool, config map[string]interface{}) (*codebuild.CreateProjectInput, string) {
 	provider := config["provider"].(map[string]interface{})
+
+	if provider["environmentType"].(string) == "ARM_CONTAINER" {
+		provider["launcherEnvironmentType"] = "ARM_CONTAINER"
+	}
 
 	batchBuildSpec, singleBuildSpec := getBuildSpec(provider)
 	sourceIdentifier := sdInitPrefix + launcherVersion
