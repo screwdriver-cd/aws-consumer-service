@@ -128,7 +128,7 @@ func stopBuild(serviceClient *awsAPI, project string) error {
 	return nil
 }
 
-//stops builds running in batch using codebuild service api
+// stops builds running in batch using codebuild service api
 func stopBuildBatch(serviceClient *awsAPI, project string) error {
 	buildBatchesResponse, _ := serviceClient.cb.ListBuildBatchesForProject(&codebuild.ListBuildBatchesForProjectInput{
 		MaxResults:  aws.Int64(5),
