@@ -1,6 +1,6 @@
 module github.com/screwdriver-cd/aws-consumer-service
 
-go 1.17
+go 1.19
 
 require (
 	github.com/aws/aws-lambda-go v1.26.0

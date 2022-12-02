@@ -162,7 +162,7 @@ var ProcessMessage = func(id int, value string, wg *sync.WaitGroup, ctx context.
 	return nil
 }
 
-//recovers panic
+// recovers panic
 func recoverPanic() {
 	if p := recover(); p != nil {
 		filename := fmt.Sprintf("stacktrace-%s", time.Now().Format(time.RFC3339))

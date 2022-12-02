@@ -287,7 +287,7 @@ func (e *AwsExecutorEKS) Stop(config map[string]interface{}) error {
 	return nil
 }
 
-//Name fn returns the name of executor
+// Name fn returns the name of executor
 func (e *AwsExecutorEKS) Name() string {
 	return e.name
 }
