@@ -491,3 +491,68 @@ func TestStop(t *testing.T) {
 		assert.Equal(t, testCase.expectedError, err, testCase.message)
 	}
 }
+
+func TestVerify(t *testing.T) {
+	projectName := testJobName + "-" + testJobID
+	verifyConfig := getTestConfig()
+	provider := verifyConfig["provider"].(map[string]interface{})
+	verifyConfig["provider"] = provider
+
+	testCases := []struct {
+		message            string
+		expectedInput      map[string]interface{}
+		expectedOutput     string
+		batchGetBuildError error
+	}{
+		{
+			message:            "Code Build status FAILED",
+			expectedInput:      verifyConfig,
+			expectedOutput:     "build failed as image is not accessible",
+			batchGetBuildError: errors.New("Access Denied"),
+		},
+	}
+
+	for _, testCase := range testCases {
+		mockServiceClient, mockCBAPI, _ := setup()
+		mockCBAPI.On("ListBuildsForProject", &codebuild.ListBuildsForProjectInput{
+			ProjectName: aws.String(projectName),
+			SortOrder:   aws.String("DESCENDING"),
+		}).Return(&codebuild.ListBuildsForProjectOutput{
+			Ids: []*string{
+				aws.String("1"),
+			},
+		}, nil)
+
+		mockCBAPI.On("BatchGetBuilds", &codebuild.BatchGetBuildsInput{
+			Ids: []*string{
+				aws.String("1"),
+			},
+		}).Return(&codebuild.BatchGetBuildsOutput{
+			Builds: []*codebuild.Build{
+				{
+					Arn:         aws.String("arn:aws:codebuild:us-west-2:123456789012:build/" + projectName + ":1234"),
+					Id:          aws.String("1234"),
+					BuildStatus: aws.String("FAILED"),
+					Phases: []*codebuild.BuildPhase{
+						{
+							PhaseStatus: aws.String("FAILED"),
+							PhaseType:   aws.String("PROVISIONING"),
+							Contexts: []*codebuild.PhaseContext{
+								{
+									Message: aws.String("build failed as image is not accessible"),
+								},
+							},
+						},
+					},
+				},
+			},
+		}, testCase.batchGetBuildError)
+
+		executor := &AwsServerless{
+			serviceClient: mockServiceClient,
+		}
+		_, msg, _ := executor.Verify(testCase.expectedInput)
+		assert.IsType(t, testCase.expectedOutput, msg, testCase.message)
+		assert.Equal(t, testCase.expectedOutput, msg, testCase.message)
+	}
+}

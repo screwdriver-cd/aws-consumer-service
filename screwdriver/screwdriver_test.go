@@ -130,6 +130,44 @@ func TestUpdateBuild(t *testing.T) {
 	}
 }
 
+func TestUpdateBuildStatus(t *testing.T) {
+	var meta map[string]interface{}
+	mockJSON := []byte("{\"foo\":\"bar\"}")
+	_ = json.Unmarshal(mockJSON, &meta)
+
+	tests := []struct {
+		status        BuildStatus
+		statusMessage string
+		meta          map[string]interface{}
+		statusCode    int
+		err           error
+	}{
+		{Success, "", meta, 200, nil},
+		{Failure, "Error: Build failed to start. Image could not be pulled.", meta, 200, nil},
+		{Failure, "", meta, 200, nil},
+		{Aborted, "", meta, 200, nil},
+		{Running, "", meta, 200, nil},
+		{"NOTASTATUS", "", meta, 200, errors.New("Invalid build status: NOTASTATUS")},
+		{Success, "", meta, 500, errors.New("Posting to Build Status: " +
+			"WARNING: received error from PUT(http://fakeurl/v4/builds/15): " +
+			"Put \"http://fakeurl/v4/builds/15\": " +
+			"PUT http://fakeurl/v4/builds/15 giving up after 5 attempts ")},
+	}
+
+	for _, test := range tests {
+		var client *retryablehttp.Client
+		client = makeRetryableHttpClient(testMaxRetries, testRetryWaitMin, testRetryWaitMax, testHttpTimeout)
+		client.HTTPClient = makeFakeHTTPClient(t, test.statusCode, "{}")
+		testAPI := api{"http://fakeurl", "faketoken", client}
+
+		err := testAPI.UpdateBuildStatus(test.status, test.meta, 15, test.statusMessage)
+
+		if !reflect.DeepEqual(err, test.err) {
+			t.Errorf("Unexpected error from UpdateBuildStatus: \n%v\n want \n%v", err, test.err)
+		}
+	}
+}
+
 func TestGetAPIURL(t *testing.T) {
 	var client *retryablehttp.Client
 	client = makeRetryableHTTPClient(testMaxRetries, testRetryWaitMin, testRetryWaitMax, testHTTPTimeout)

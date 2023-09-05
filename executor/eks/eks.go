@@ -287,6 +287,11 @@ func (e *AwsExecutorEKS) Stop(config map[string]interface{}) error {
 	return nil
 }
 
+// Verify build status
+func (e *AwsExecutorEKS) Verify(config map[string]interface{}) (string, string, error) {
+	return "", "", nil
+}
+
 // Name fn returns the name of executor
 func (e *AwsExecutorEKS) Name() string {
 	return e.name
