@@ -96,7 +96,7 @@ func deleteProject(serviceClient *awsAPI, project string) error {
 	if err != nil {
 		return fmt.Errorf("Got error deleting project: %v", err)
 	}
-	log.Printf("Deleted project %q", *deleteProjectResponse)
+	log.Printf("Deleted project: %q", *deleteProjectResponse)
 
 	return nil
 }
@@ -433,18 +433,26 @@ func (e *AwsServerless) Stop(config map[string]interface{}) (err error) {
 	provider := config["provider"].(map[string]interface{})
 	project := getProjectName(config)
 
-	if provider["prune"].(bool) {
-		return deleteProject(e.serviceClient, project)
-	}
-
 	bucket := getBucketName(provider["region"].(string), provider["buildRegion"].(string))
 	// set bucket to config
 	config["bucket"] = bucket
 
+	var stopErr error
 	if checkLauncherUpdate(e.serviceClient, provider["launcherVersion"].(string), bucket) {
-		return stopBuildBatch(e.serviceClient, project)
+		stopErr = stopBuildBatch(e.serviceClient, project)
+	} else {
+		stopErr = stopBuild(e.serviceClient, project)
 	}
-	return stopBuild(e.serviceClient, project)
+
+	if stopErr != nil {
+		log.Printf("Error stopping build: %v", stopErr)
+	}
+
+	if provider["prune"].(bool) {
+		return deleteProject(e.serviceClient, project)
+	}
+
+	return nil
 }
 
 // Name returns the name of executor
