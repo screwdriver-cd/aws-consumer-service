@@ -458,29 +458,41 @@ func TestStop(t *testing.T) {
 	provider := stopConfig["provider"].(map[string]interface{})
 	provider["prune"] = true
 	stopConfig["provider"] = provider
+	sourceID := "sdinit-" + testLauncherVersion
+	os.Setenv("SD_SLS_BUILD_BUCKET", testBucket)
+	defer os.Unsetenv("SD_SLS_BUILD_BUCKET")
+	buildID := "1234"
 
 	testCases := []struct {
 		message            string
 		expectedInput      map[string]interface{}
 		expectedError      error
 		deleteProjectError error
+		stopBuildError     error
 	}{
 		{
 			message:            "Project is deleted successfully",
 			expectedInput:      stopConfig,
 			expectedError:      nil,
 			deleteProjectError: nil,
+			stopBuildError:     nil,
 		},
 		{
 			message:            "Project is not deleted successfully",
 			expectedInput:      stopConfig,
 			expectedError:      errors.New("Got error deleting project: Access Denied"),
 			deleteProjectError: errors.New("Access Denied"),
+			stopBuildError:     nil,
 		},
 	}
 
 	for _, testCase := range testCases {
-		mockServiceClient, mockCBAPI, _ := setup()
+		mockServiceClient, mockCBAPI, mockS3API := setup()
+
+		mockS3API.On("ListObjectsV2", &s3.ListObjectsV2Input{Bucket: aws.String(testBucket)}).Return(&s3.ListObjectsV2Output{Contents: []*s3.Object{{Key: aws.String(sourceID)}}}, nil)
+		mockCBAPI.On("ListBuildsForProject", &codebuild.ListBuildsForProjectInput{ProjectName: aws.String(projectName), SortOrder: aws.String("DESCENDING")}).Return(&codebuild.ListBuildsForProjectOutput{Ids: []*string{aws.String(buildID)}}, nil)
+		mockCBAPI.On("BatchGetBuilds", &codebuild.BatchGetBuildsInput{Ids: []*string{aws.String(buildID)}}).Return(&codebuild.BatchGetBuildsOutput{Builds: []*codebuild.Build{{Id: aws.String(buildID), BuildStatus: aws.String("IN_PROGRESS")}}}, nil)
+		mockCBAPI.On("StopBuild", &codebuild.StopBuildInput{Id: aws.String(buildID)}).Return(&codebuild.StopBuildOutput{Build: &codebuild.Build{BuildNumber: aws.Int64(int64(testBuildID))}}, testCase.stopBuildError)
 		mockCBAPI.On("DeleteProject", &codebuild.DeleteProjectInput{Name: aws.String(projectName)}).Return(&codebuild.DeleteProjectOutput{}, testCase.deleteProjectError)
 
 		executor := &AwsServerless{
