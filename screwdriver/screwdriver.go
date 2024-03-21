@@ -23,9 +23,38 @@ const retryWaitMax = 300
 var maxRetries = 5
 var httpTimeout = time.Duration(20) * time.Second
 
+// BuildStatus is the status of a Screwdriver build
+type BuildStatus string
+
+// These are the set of valid statuses that a build can be set to
+const (
+	Running BuildStatus = "RUNNING"
+	Success             = "SUCCESS"
+	Failure             = "FAILURE"
+	Aborted             = "ABORTED"
+)
+
+func (b BuildStatus) String() string {
+	return string(b)
+}
+
+// BuildStatusPayload is a Screwdriver Build Status payload.
+type BuildStatusPayload struct {
+	Status string                 `json:"status"`
+	Meta   map[string]interface{} `json:"meta"`
+}
+
+// BuildStatusMessagePayload is a Screwdriver Build Status Message payload.
+type BuildStatusMessagePayload struct {
+	Status        string                 `json:"status"`
+	Meta          map[string]interface{} `json:"meta"`
+	StatusMessage string                 `json:"statusMessage"`
+}
+
 // API interface definition
 type API interface {
 	UpdateBuild(stats map[string]interface{}, buildID int, statusMessage string) error
+	UpdateBuildStatus(status BuildStatus, meta map[string]interface{}, buildID int, statusMessage string) error
 	GetAPIURL() (string, error)
 }
 
@@ -183,6 +212,49 @@ func (a SDAPI) UpdateBuild(stats map[string]interface{}, buildID int, statusMess
 	_, err = a.put(u, "application/json", bytes.NewReader(payload))
 	if err != nil {
 		return fmt.Errorf("Posting to Build Stats: %v", err)
+	}
+
+	return nil
+}
+
+// update the screwdriver build status
+func (a SDAPI) UpdateBuildStatus(status BuildStatus, meta map[string]interface{}, buildID int, statusMessage string) error {
+	switch status {
+	case Running:
+	case Success:
+	case Failure:
+	case Aborted:
+	default:
+		return fmt.Errorf("Invalid build status: %s", status)
+	}
+
+	u, err := a.makeURL(fmt.Sprintf("builds/%d", buildID))
+	if err != nil {
+		return fmt.Errorf("creating url: %v", err)
+	}
+
+	var payload []byte
+	if statusMessage != "" {
+		bs := BuildStatusMessagePayload{
+			Status:        status.String(),
+			Meta:          meta,
+			StatusMessage: statusMessage,
+		}
+		payload, err = json.Marshal(bs)
+	} else {
+		bs := BuildStatusPayload{
+			Status: status.String(),
+			Meta:   meta,
+		}
+		payload, err = json.Marshal(bs)
+	}
+	if err != nil {
+		return fmt.Errorf("Marshaling JSON for Build Status: %v", err)
+	}
+
+	_, err = a.put(u, "application/json", bytes.NewReader(payload))
+	if err != nil {
+		return fmt.Errorf("Posting to Build Status: %v", err)
 	}
 
 	return nil

@@ -455,6 +455,48 @@ func (e *AwsServerless) Stop(config map[string]interface{}) (err error) {
 	return nil
 }
 
+// Verify build status
+func (e *AwsServerless) Verify(config map[string]interface{}) (string, string, error) {
+	project := getProjectName(config)
+
+	buildsResponse, _ := e.serviceClient.cb.ListBuildsForProject(&codebuild.ListBuildsForProjectInput{
+		ProjectName: aws.String(project),
+		SortOrder:   aws.String("DESCENDING"),
+	})
+
+	log.Printf("Build ids for project %q: %v", project, buildsResponse.Ids)
+	if len(buildsResponse.Ids) > 0 {
+		buildResp, _ := e.serviceClient.cb.BatchGetBuilds(&codebuild.BatchGetBuildsInput{
+			Ids: []*string{
+				buildsResponse.Ids[0],
+			},
+		})
+		if len(buildResp.Builds) == 0 {
+			return "", "", fmt.Errorf("no builds found for ID: %s", *buildsResponse.Ids[0])
+		}
+
+		status := buildResp.Builds[0].BuildStatus
+
+		for _, phase := range buildResp.Builds[0].Phases {
+			phaseType := aws.StringValue(phase.PhaseType)
+			status := aws.StringValue(phase.PhaseStatus)
+			if phaseType == "PROVISIONING" || phaseType == "DOWNLOAD_SOURCE" {
+				if status == "FAILED" || status == "FAULT" || status == "STOPPED" || status == "TIMED_OUT" {
+					contexts := phase.Contexts
+					if len(contexts) > 0 {
+						latestContext := contexts[len(contexts)-1]
+						latestMessage := aws.StringValue(latestContext.Message)
+						return status, latestMessage, nil
+					}
+				}
+			}
+		}
+
+		return *status, "", nil
+	}
+	return "", "", nil
+}
+
 // Name returns the name of executor
 func (e *AwsServerless) Name() string {
 	return e.name

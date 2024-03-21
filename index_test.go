@@ -50,6 +50,12 @@ func (e *mockSlsExecutor) Stop(config map[string]interface{}) error {
 	stopSlsFn = "stopsls"
 	return nil
 }
+func (e *mockSlsExecutor) Verify(config map[string]interface{}) (string, string, error) {
+	return "FAILED", "error", nil
+}
+func (e *mockEksExecutor) Verify(config map[string]interface{}) (string, string, error) {
+	return "SUCCEEDED", "", nil
+}
 func newSls(region string) *mockSlsExecutor {
 	return &mockSlsExecutor{
 		name: "sls",
@@ -61,7 +67,7 @@ func newEks(region string) *mockEksExecutor {
 	}
 }
 
-func mockAPI(t *testing.T, testBuildID int) MockAPI {
+func mockAPI(t *testing.T, testBuildID int, testStatus sd.BuildStatus) MockAPI {
 	return MockAPI{
 		updateBuild: func(stats map[string]interface{}, buildID int, statusMessage string) error {
 			if buildID != testBuildID {
@@ -79,12 +85,26 @@ func mockAPI(t *testing.T, testBuildID int) MockAPI {
 		getAPIURL: func() (string, error) {
 			return "https://api.screwdriver.cd/v4/", nil
 		},
+		updateBuildStatus: func(status sd.BuildStatus, meta map[string]interface{}, buildID int, statusMessage string) error {
+			if buildID != testBuildID {
+				t.Errorf("status == %s, want %s", status, testStatus)
+				// Panic to get the stacktrace
+				panic(true)
+			}
+			if status != testStatus {
+				t.Errorf("status == %s, want %s", status, testStatus)
+				// Panic to get the stacktrace
+				panic(true)
+			}
+			return nil
+		},
 	}
 }
 
 type MockAPI struct {
-	updateBuild func(stats map[string]interface{}, buildID int, statusMessage string) error
-	getAPIURL   func() (string, error)
+	updateBuild       func(stats map[string]interface{}, buildID int, statusMessage string) error
+	updateBuildStatus func(sd.BuildStatus, map[string]interface{}, int, string) error
+	getAPIURL         func() (string, error)
 }
 
 func (f MockAPI) UpdateBuild(stats map[string]interface{}, buildID int, statusMessage string) error {
@@ -92,7 +112,15 @@ func (f MockAPI) UpdateBuild(stats map[string]interface{}, buildID int, statusMe
 		return f.updateBuild(stats, buildID, "")
 	}
 	return nil
+
 }
+func (f MockAPI) UpdateBuildStatus(status sd.BuildStatus, meta map[string]interface{}, buildID int, statusMessage string) error {
+	if f.updateBuildStatus != nil {
+		return f.updateBuildStatus(status, nil, buildID, "")
+	}
+	return nil
+}
+
 func (f MockAPI) GetAPIURL() (string, error) {
 	return "", nil
 }

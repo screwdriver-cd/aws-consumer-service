@@ -37,6 +37,7 @@ type IExecutor interface {
 	Start(config map[string]interface{}) (string, error)
 	Stop(config map[string]interface{}) error
 	Name() string
+	Verify(config map[string]interface{}) (string, string, error)
 }
 
 // List Executors
@@ -67,6 +68,15 @@ func UpdateBuildStats(hostname string, buildID int, api sd.API) {
 		if apierr := api.UpdateBuild(stats, int(buildID), ""); apierr != nil {
 			log.Printf("Updating build stats: %v", apierr)
 		}
+	}
+}
+
+// UpdateBuildStatus calls SD API to update status
+func UpdateBuildStatus(buildID int, api sd.API, status sd.BuildStatus, message string) {
+	emptyMeta := make(map[string]interface{})
+	log.Printf("Setting build status to %s", status)
+	if apierr := api.UpdateBuildStatus(status, emptyMeta, int(buildID), message); apierr != nil {
+		log.Printf("Failed updating the build status: %v", apierr)
 	}
 }
 
@@ -143,6 +153,9 @@ var ProcessMessage = func(id int, value string, wg *sync.WaitGroup, ctx context.
 	if executorType != "" && job != "" {
 		var hostname string
 		executor := GetExecutor(executorType, buildRegion)
+		buildID, _ := buildConfig["buildId"].(json.Number).Int64()
+		api, _ := api(buildConfig["apiUri"].(string), buildConfig["token"].(string))
+
 		switch string(job) {
 		case "start":
 			hostname, err = executor.Start(buildConfig)
@@ -151,15 +164,39 @@ var ProcessMessage = func(id int, value string, wg *sync.WaitGroup, ctx context.
 		}
 		if err != nil {
 			log.Printf("Failed to %v build %v", job, err)
+			UpdateBuildStatus(int(buildID), api, sd.Failure, err.Error())
 		} else {
 			log.Printf("%v build successful", job)
 		}
-		buildID, _ := buildConfig["buildId"].(json.Number).Int64()
-		api, _ := api(buildConfig["apiUri"].(string), buildConfig["token"].(string))
 		UpdateBuildStats(hostname, int(buildID), api)
+		msg, _ := PollBuildStatus(executor, buildConfig)
+		if msg != "" {
+			UpdateBuildStatus(int(buildID), api, sd.Failure, msg)
+		}
 	}
 
 	return nil
+}
+
+func PollBuildStatus(executor IExecutor, config map[string]interface{}) (string, error) {
+	endTime := time.Now().Add(10 * time.Minute) // ensure it doesn't run past 15 min lambda limit
+	for time.Now().Before(endTime) {
+		status, msg, err := executor.Verify(config)
+		if err != nil {
+			fmt.Printf("Failed to get build status: %s\n", status)
+			return "", err
+		}
+		fmt.Printf("Latest build status: %s and message %s\n", status, msg)
+		if status == "SUCCEEDED" {
+			return "", nil // Exit on success
+		}
+		if msg != "" {
+			return msg, nil // Exit if there's a message
+		}
+		time.Sleep(2 * time.Minute) // 2-minute sleep between polls
+	}
+
+	return "", nil
 }
 
 // recovers panic
