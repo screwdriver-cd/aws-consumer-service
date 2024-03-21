@@ -15,7 +15,7 @@ jobs:
             - tidy: go mod tidy
             - gofmt: (! gofmt -d -s . | grep '^')
             - test: make test JSONFILE=${SD_ARTIFACTS_DIR}/report.json COVERPROFILE=${SD_ARTIFACTS_DIR}/coverage.out
-            - build: go build -a -o /dev/null
+            - build: go build -tags lambda.norpc -a -o /dev/null
             - test-release: "curl -sL https://git.io/goreleaser | bash -s -- --snapshot"
 
     publish:
