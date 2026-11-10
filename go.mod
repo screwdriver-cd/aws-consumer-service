@@ -1,12 +1,12 @@
 module github.com/screwdriver-cd/aws-consumer-service
 
-go 1.25
+go 1.27.3
 
 require (
-	github.com/aws/aws-lambda-go v1.26.0
+	github.com/aws/aws-lambda-go v1.55.1
 	github.com/aws/aws-sdk-go v1.43.1
 	github.com/hashicorp/go-retryablehttp v0.7.0
-	github.com/stretchr/testify v1.6.1
+	github.com/stretchr/testify v1.7.2
 	k8s.io/api v0.19.0
 	k8s.io/apimachinery v0.19.0
 	k8s.io/client-go v0.19.0
@@ -42,7 +42,7 @@ require (
 	google.golang.org/protobuf v1.24.0 // indirect
 	gopkg.in/inf.v0 v0.9.1 // indirect
 	gopkg.in/yaml.v2 v2.4.0 // indirect
-	gopkg.in/yaml.v3 v3.0.0-20200615113413-eeeca48fe776 // indirect
+	gopkg.in/yaml.v3 v3.0.1 // indirect
 	k8s.io/klog/v2 v2.2.0 // indirect
 	k8s.io/kube-openapi v0.0.0-20200805222855-6aeccd4b50c6 // indirect
 	k8s.io/utils v0.0.0-20200729134348-d5654de09c73 // indirect
